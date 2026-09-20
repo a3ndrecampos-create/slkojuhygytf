@@ -23,8 +23,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+      # O runner já traz o Android SDK; só aceitamos as licenças.
+      - name: Aceitar licenças do Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       # Instala o Gradle 8.9 e faz cache automaticamente.
       # (não depende do gradlew / gradle-wrapper.jar)
@@ -69,7 +70,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - uses: android-actions/setup-android@v3
+      - name: Aceitar licenças do Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - uses: gradle/actions/setup-gradle@v4
         with:
