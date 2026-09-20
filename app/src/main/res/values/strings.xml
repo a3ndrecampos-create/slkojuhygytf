@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Semáforo de Valores</string>
+    <string name="accessibility_service_label">Semáforo de Valores</string>
+    <string name="accessibility_service_description">Lê as ofertas de corrida exibidas nos apps de motorista (Uber, 99, inDrive) para calcular a lucratividade e mostrar o semáforo de cores. Nenhum dado sai do seu aparelho.</string>
+    <string name="notification_channel_name">Monitoramento de corridas</string>
+    <string name="notification_title">Semáforo de Valores ativo</string>
+    <string name="notification_text">Monitorando ofertas de corrida</string>
+</resources>

@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissões para overlay flutuante -->
+    <!-- Overlay flutuante sobre outros apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Serviço em background -->
+    <!-- Serviço em primeiro plano -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <!-- Broadcast para comunicação entre serviços -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Notificação do serviço (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".SemaforoApp"
@@ -20,7 +20,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SemaforoValores">
 
-        <!-- Activity principal -->
         <activity
             android:name=".ui.screens.MainActivity"
             android:exported="true"
@@ -31,7 +30,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Serviço de Acessibilidade -->
+        <!-- Serviço de Acessibilidade (lê a tela dos apps de corrida) -->
         <service
             android:name=".service.RideAccessibilityService"
             android:exported="true"
@@ -45,7 +44,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Serviço do Overlay (Foreground) -->
+        <!-- Serviço do overlay (foreground) -->
         <service
             android:name=".service.OverlayService"
             android:exported="false"

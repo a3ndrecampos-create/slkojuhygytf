@@ -1,37 +1,45 @@
 # 🚦 Semáforo de Valores Pro
 
-App Android para motoristas de aplicativo (Uber, 99, inDrive) que exibe métricas de corrida em tempo real com classificação por cor e cálculo de custo de combustível.
+App Android para motoristas de aplicativo (Uber, 99, inDrive) que mostra, sobre o app de corrida, se a oferta compensa: **verde / amarelo / vermelho**, com cálculo de combustível.
 
 ## Funcionalidades
 
 - **Overlay automático** sobre Uber, 99 e inDrive
-- **Semáforo de cores**: Verde ✅ / Amarelo ⚠️ / Vermelho ❌
-- **5 métricas por corrida**: R$/km, R$/hora, Lucro%, Avaliação, Lucro líquido
-- **Cálculo de combustível** em tempo real
-- **Histórico de corridas** aceitas/recusadas
-- **Configurações** de limites por cor
+- **Semáforo**: Verde ✅ / Amarelo ⚠️ / Vermelho ❌ (vale a pior métrica)
+- **5 métricas**: R$/km, R$/hora, lucro %, nota do passageiro, lucro líquido
+- **Combustível** calculado a partir de preço do litro e consumo do carro
+- **Histórico** de corridas aceitas/recusadas
+- **Ajustes** de todos os limites, apps monitorados e valor mínimo
 
 ## Stack
 
-- Kotlin + Jetpack Compose
-- Android Accessibility Service (leitura de tela)
-- WindowManager (overlay flutuante)
-- Room Database (histórico)
-- DataStore (configurações)
+Kotlin · Jetpack Compose · AccessibilityService · WindowManager (overlay) · Room · DataStore
 
 ## Build
 
+O projeto **não inclui** `gradlew` / `gradle-wrapper.jar` (arquivo binário). O workflow do GitHub Actions
+já instala o Gradle 8.9 sozinho, então basta dar push. Para builds locais:
+
 ```bash
-git clone https://github.com/SEU_USUARIO/SemaforoValoresPro
-cd SemaforoValoresPro
+gradle assembleDebug            # com Gradle 8.9 instalado
+# ou gere o wrapper uma vez:
+gradle wrapper --gradle-version 8.9
 ./gradlew assembleDebug
 ```
 
-## Permissões necessárias
+APK em `app/build/outputs/apk/debug/app-debug.apk`.
 
-- `SYSTEM_ALERT_WINDOW` — overlay flutuante
-- `BIND_ACCESSIBILITY_SERVICE` — leitura dos apps de corrida
-- `FOREGROUND_SERVICE` — serviço em background
+## Usar
+
+1. Instale o APK.
+2. Abra o app e conceda as 3 permissões (sobreposição, acessibilidade, notificações).
+   - Em Android 13+ com APK instalado fora da Play Store: *Config. → Apps → Semáforo de Valores → ⋮ → Permitir configurações restritas* antes de ativar a acessibilidade.
+3. Toque em **Iniciar monitoramento**.
+4. Use **Testar overlay** para ver o card sem precisar de uma corrida real.
+
+## Calibração (importante)
+
+A leitura da tela está em `RideAccessibilityService.kt` (`extractUberOffer`). Ela usa heurísticas de texto (`km`, `min`, `R$`) e precisa ser ajustada à versão atual de cada app. Veja o `SETUP.md`.
 
 ## Licença
 

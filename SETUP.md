@@ -2,109 +2,82 @@
 
 ## Pré-requisitos
 
-- Android Studio Hedgehog (2023.1.1) ou mais novo
+- Android Studio Ladybug (2024.2) ou mais novo
 - JDK 17
 - Android SDK 35
 - Conta GitHub
 
-## 1. Criar repositório no GitHub
-
-```bash
-# Criar repo pelo CLI do GitHub
-gh repo create SemaforoValoresPro --public --description "App para motoristas de app"
-
-# Ou via interface: github.com/new
-```
-
-## 2. Subir o projeto
+## 1. Subir para o GitHub
 
 ```bash
 cd SemaforoValoresPro
 git init
 git add .
-git commit -m "feat: estrutura inicial do projeto"
+git commit -m "feat: projeto completo"
 git branch -M main
 git remote add origin https://github.com/SEU_USUARIO/SemaforoValoresPro.git
 git push -u origin main
 ```
 
-## 3. Configurar Secrets para CI/CD (APK assinado)
+O workflow `.github/workflows/build.yml` roda testes, gera o APK debug e release (sem assinar)
+e publica ambos em **Actions → (execução) → Artifacts**.
 
-No GitHub: Settings → Secrets and variables → Actions
+## 2. Build local
+
+```bash
+gradle assembleDebug
+# opcional: gerar o wrapper
+gradle wrapper --gradle-version 8.9
+```
+
+No Android Studio: *File → Open* na pasta do projeto e aguarde o sync.
+
+## 3. APK assinado no CI (opcional)
+
+Em *Settings → Secrets and variables → Actions* crie:
 
 | Secret | Descrição |
 |--------|-----------|
-| `KEYSTORE_BASE64` | `base64 -w 0 seu_keystore.jks` |
+| `KEYSTORE_BASE64` | `base64 -w 0 semaforovalores.jks` |
 | `KEY_ALIAS` | Alias da chave |
 | `KEY_PASSWORD` | Senha da chave |
 | `STORE_PASSWORD` | Senha do keystore |
 
-### Gerar keystore:
+Gerar keystore:
 ```bash
-keytool -genkeypair -v \
-  -keystore semaforovalores.jks \
-  -keyalg RSA -keysize 2048 \
-  -validity 10000 \
-  -alias semaforovalores
+keytool -genkeypair -v -keystore semaforovalores.jks -keyalg RSA -keysize 2048 -validity 10000 -alias semaforovalores
 ```
+O APK assinado é gerado e anexado quando você cria uma **Release** no GitHub.
 
-## 4. Build local
-
-```bash
-# Debug
-./gradlew assembleDebug
-# APK em: app/build/outputs/apk/debug/
-
-# Release
-./gradlew assembleRelease
-```
-
-## 5. Instalar no celular
+## 4. Instalar no celular
 
 ```bash
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 6. Permissões necessárias (configurar após instalar)
+## 5. Calibrar a leitura dos apps
 
-1. **Overlay (janela sobreposta)**: Configurações → Apps → Semáforo de Valores → Exibir sobre outros apps
-2. **Acessibilidade**: Configurações → Acessibilidade → Semáforo de Valores → Ativar
-
-## 7. Ajustar extração de dados (importante!)
-
-O arquivo `RideAccessibilityService.kt` precisa ser calibrado para cada versão dos apps:
-
-```kotlin
-// Método extractUberOffer() — inspecione o layout do Uber Driver com:
-adb shell uiautomator dump && adb pull /sdcard/window_dump.xml
+```bash
+adb shell uiautomator dump /sdcard/window_dump.xml
+adb pull /sdcard/window_dump.xml
 ```
 
-Use o Android Layout Inspector para mapear os IDs dos campos de distância, tempo e valor.
+Com a oferta na tela, abra o `window_dump.xml` e veja onde ficam distância, tempo e valor.
+Ajuste `extractUberOffer()` (e os equivalentes de 99 e inDrive) em
+`service/RideAccessibilityService.kt`. Dica: se o app mostra "5 min (2 km)" de busca e
+"15 min (8 km)" da viagem, escolha o texto certo pela posição/ID em vez do primeiro `km`/`min`.
 
-## Estrutura do projeto
+## Estrutura
 
 ```
 app/src/main/java/com/semaforovalores/
-├── model/
-│   ├── TripOffer.kt        # Dados da corrida + cálculos
-│   └── UserSettings.kt     # Configurações do usuário
-├── service/
-│   ├── RideAccessibilityService.kt  # Lê dados dos apps
-│   └── OverlayService.kt            # Exibe o overlay
-├── data/
-│   ├── AppDatabase.kt      # Room DB
-│   ├── TripDao.kt          # DAO histórico
-│   └── SettingsRepository.kt        # DataStore
-├── ui/
-│   ├── overlay/
-│   │   └── TripOverlay.kt  # Compose: card do overlay
-│   ├── screens/
-│   │   ├── MainActivity.kt
-│   │   ├── HomeScreen.kt   # Dashboard principal
-│   │   ├── HistoryScreen.kt
-│   │   └── SettingsScreen.kt
-│   └── theme/
-│       └── Theme.kt
-└── util/
-    └── TripClassifier.kt   # Lógica verde/amarelo/vermelho
+├── SemaforoApp.kt
+├── model/          TripOffer, UserSettings
+├── util/           TripClassifier (lógica verde/amarelo/vermelho)
+├── data/           AppDatabase, TripDao (Room), SettingsRepository (DataStore)
+├── service/        RideAccessibilityService, OverlayService, OverlayLifecycleOwner
+└── ui/
+    ├── overlay/    TripOverlayCard
+    ├── screens/    MainActivity, HomeScreen, HistoryScreen, SettingsScreen
+    └── theme/      Theme.kt
 ```
