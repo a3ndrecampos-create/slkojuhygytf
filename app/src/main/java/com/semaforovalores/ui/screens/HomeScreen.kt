@@ -151,6 +151,30 @@ fun HomeScreen(refreshTick: Int, modifier: Modifier = Modifier) {
             }
         }
 
+        // ---- Diagnóstico
+        val eventCount by RideAccessibilityService.eventCount.collectAsState()
+        val lastPackage by RideAccessibilityService.lastPackage.collectAsState()
+        val lastTexts by RideAccessibilityService.lastTexts.collectAsState()
+        val lastParsed by RideAccessibilityService.lastParsed.collectAsState()
+        SectionCard("Diagnóstico da leitura") {
+            Text(
+                "Eventos recebidos dos apps de corrida: $eventCount" +
+                        if (lastPackage.isNotEmpty()) " ($lastPackage)" else "",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                if (lastParsed.isNotEmpty()) "✅ Última oferta lida: $lastParsed"
+                else "⚠️ Nenhuma oferta interpretada ainda",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                if (lastTexts.isEmpty()) "Nenhum texto lido. Abra o app de corrida com uma oferta na tela e volte aqui."
+                else "Textos lidos da tela:\n" + lastTexts.joinToString("\n") { "• $it" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         // ---- Legenda
         SectionCard("Como ler o semáforo") {
             LegendRow(SemaforoGreen, "Verde", "Compensa — todas as métricas acima do limite verde.")

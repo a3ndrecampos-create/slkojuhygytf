@@ -8,10 +8,13 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.semaforovalores.model.SourceApp
 import com.semaforovalores.model.TripOffer
+import com.semaforovalores.util.OfferParser
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Serviço de Acessibilidade que monitora Uber, 99 e inDrive.
- * Extrai dados da corrida da tela e os envia ao OverlayService via broadcast local.
+ * Extrai os textos da tela, interpreta com [OfferParser] e envia a oferta
+ * ao OverlayService via broadcast restrito ao próprio app.
  */
 class RideAccessibilityService : AccessibilityService() {
 
@@ -30,6 +33,16 @@ class RideAccessibilityService : AccessibilityService() {
 
         /** Não reenvia a mesma oferta antes deste intervalo (ms). */
         private const val REPEAT_INTERVAL_MS = 4_000L
+
+        // ---- Diagnóstico (mostrado na tela inicial do app) ----
+        /** Quantos eventos de apps de corrida o serviço já recebeu. */
+        val eventCount = MutableStateFlow(0)
+        /** Pacote do último app monitorado que gerou evento. */
+        val lastPackage = MutableStateFlow("")
+        /** Últimos textos lidos da tela do app de corrida. */
+        val lastTexts = MutableStateFlow<List<String>>(emptyList())
+        /** Última oferta interpretada com sucesso (resumo em texto). */
+        val lastParsed = MutableStateFlow("")
     }
 
     private var lastOffer: TripOffer? = null
@@ -50,15 +63,24 @@ class RideAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
         val sourceApp = detectSourceApp(packageName) ?: return
+
+        eventCount.value = eventCount.value + 1
+        lastPackage.value = packageName
+
         val rootNode = rootInActiveWindow ?: return
-
-        val offer = when (sourceApp) {
-            SourceApp.UBER -> extractUberOffer(rootNode)
-            SourceApp.NINETY_NINE -> extractNinetyNineOffer(rootNode)
-            SourceApp.INDRIVE -> extractInDriveOffer(rootNode)
+        val texts = try {
+            getAllTexts(rootNode)
+        } catch (e: Exception) {
+            return
         }
+        if (texts.isEmpty()) return
+        if (texts != lastTexts.value) lastTexts.value = texts.take(80)
 
-        offer?.let { broadcastOffer(it) }
+        val offer = OfferParser.parse(texts, sourceApp) ?: return
+        lastParsed.value = "R$ %.2f · %.1f km · %d min · nota %.2f".format(
+            offer.fareEstimated, offer.distanceKm, offer.durationMin, offer.passengerRating
+        )
+        broadcastOffer(offer)
     }
 
     private fun detectSourceApp(pkg: String): SourceApp? = when {
@@ -68,77 +90,19 @@ class RideAccessibilityService : AccessibilityService() {
         else -> null
     }
 
-    /**
-     * Extração Uber: busca nós com padrões de texto de oferta de corrida.
-     * Calibre conforme a versão atual do app (veja SETUP.md).
-     */
-    private fun extractUberOffer(root: AccessibilityNodeInfo): TripOffer? {
-        return try {
-            val allTexts = getAllTexts(root)
-
-            val distanceText = allTexts.firstOrNull { it.contains("km", ignoreCase = true) }
-            val durationText = allTexts.firstOrNull { it.contains("min", ignoreCase = true) }
-            val fareText = allTexts.firstOrNull { it.startsWith("R$") }
-
-            val distance = parseDistance(distanceText) ?: return null
-            val duration = parseDuration(durationText) ?: return null
-            val fare = parseFare(fareText) ?: return null
-            val rating = parseRating(allTexts) ?: 5.0
-
-            TripOffer(distance, duration, fare, rating, SourceApp.UBER)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun extractNinetyNineOffer(root: AccessibilityNodeInfo): TripOffer? {
-        // TODO: ajustar de acordo com o layout atual do app 99
-        return extractUberOffer(root)?.copy(sourceApp = SourceApp.NINETY_NINE)
-    }
-
-    private fun extractInDriveOffer(root: AccessibilityNodeInfo): TripOffer? {
-        // inDrive usa negociação — extrai o valor proposto pelo passageiro
-        // TODO: ajustar de acordo com o layout atual do inDrive
-        return extractUberOffer(root)?.copy(sourceApp = SourceApp.INDRIVE)
-    }
-
-    private fun getAllTexts(node: AccessibilityNodeInfo): List<String> {
+    /** Coleta text e contentDescription de todos os nós visíveis. */
+    private fun getAllTexts(root: AccessibilityNodeInfo): List<String> {
         val texts = mutableListOf<String>()
         fun traverse(n: AccessibilityNodeInfo?) {
             if (n == null) return
             n.text?.toString()?.trim()?.let { if (it.isNotEmpty()) texts.add(it) }
+            n.contentDescription?.toString()?.trim()?.let {
+                if (it.isNotEmpty() && !texts.contains(it)) texts.add(it)
+            }
             for (i in 0 until n.childCount) traverse(n.getChild(i))
         }
-        traverse(node)
+        traverse(root)
         return texts
-    }
-
-    private fun parseDistance(text: String?): Double? {
-        if (text == null) return null
-        return Regex("([\\d,\\.]+)\\s*km", RegexOption.IGNORE_CASE).find(text)
-            ?.groupValues?.get(1)
-            ?.replace(",", ".")
-            ?.toDoubleOrNull()
-    }
-
-    private fun parseDuration(text: String?): Int? {
-        if (text == null) return null
-        return Regex("(\\d+)\\s*min", RegexOption.IGNORE_CASE).find(text)
-            ?.groupValues?.get(1)
-            ?.toIntOrNull()
-    }
-
-    private fun parseFare(text: String?): Double? {
-        if (text == null) return null
-        return Regex("R\\$\\s*([\\d,\\.]+)").find(text)
-            ?.groupValues?.get(1)
-            ?.replace(",", ".")
-            ?.toDoubleOrNull()
-    }
-
-    private fun parseRating(texts: List<String>): Double? {
-        return texts.firstOrNull { Regex("^[45][\\.,]\\d{1,2}$").matches(it) }
-            ?.replace(",", ".")?.toDoubleOrNull()
     }
 
     private fun broadcastOffer(offer: TripOffer) {
