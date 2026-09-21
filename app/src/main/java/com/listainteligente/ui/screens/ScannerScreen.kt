@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,6 +23,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.google.accompanist.permissions.*
 import com.listainteligente.model.PriceOption
 import com.listainteligente.model.ScannedLabel
+import com.listainteligente.service.CameraService
 import com.listainteligente.ui.theme.*
 
 /**
@@ -34,12 +37,29 @@ fun ScannerScreen(
     onItemAdded: (name: String, qty: Int, price: Double, priceLabel: String) -> Unit,
     onBack: () -> Unit
 ) {
+    val context         = LocalContext.current
+    val lifecycleOwner  = LocalLifecycleOwner.current
+    val cameraService   = remember { CameraService(context.applicationContext) }
+    val previewView     = remember { PreviewView(context) }
+
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     var scannedLabel    by remember { mutableStateOf<ScannedLabel?>(null) }
-    var showPriceDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (!cameraPermission.status.isGranted) cameraPermission.launchPermissionRequest()
+    }
+
+    // Só liga a câmera + OCR depois que a permissão for concedida.
+    // Sem isso, o PreviewView fica na tela mas nunca recebe frames.
+    LaunchedEffect(cameraPermission.status.isGranted) {
+        if (cameraPermission.status.isGranted) {
+            cameraService.startScanning(previewView, lifecycleOwner)
+                .collect { label ->
+                    // Ignora novas detecções enquanto o card de resultado já está aberto,
+                    // pra não trocar a etiqueta escaneada debaixo do usuário.
+                    if (scannedLabel == null) scannedLabel = label
+                }
+        }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -47,7 +67,7 @@ fun ScannerScreen(
         // ── Preview da câmera ──────────────────────────────────────────────
         if (cameraPermission.status.isGranted) {
             AndroidView(
-                factory = { ctx -> PreviewView(ctx) },
+                factory  = { previewView },
                 modifier = Modifier.fillMaxSize()
             )
         }

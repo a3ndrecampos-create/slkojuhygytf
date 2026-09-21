@@ -30,9 +30,11 @@ class CameraService(private val context: Context) {
     ): Flow<ScannedLabel> = callbackFlow {
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
+        var boundProvider: ProcessCameraProvider? = null
 
         providerFuture.addListener({
             val provider = providerFuture.get()
+            boundProvider = provider
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -62,6 +64,11 @@ class CameraService(private val context: Context) {
         }, ContextCompat.getMainExecutor(context))
 
         awaitClose {
+            // Desvincula a câmera ao sair da tela — sem isso ela continuaria
+            // presa ao ciclo de vida da Activity mesmo após fechar o scanner.
+            ContextCompat.getMainExecutor(context).execute {
+                boundProvider?.unbindAll()
+            }
             recognizer.close()
             executor.shutdown()
         }

@@ -98,6 +98,20 @@ class ShoppingViewModel @Inject constructor(
             repo.updateItem(item.copy(selectedPrice = price, selectedPriceLabel = priceLabel))
         }
 
+    fun findItem(id: Long): ShoppingItem? = detailState.value.items.find { it.id == id }
+
+    /** Chamado após escanear a etiqueta de um item já existente na lista:
+     *  grava o preço/quantidade lidos e marca o item como encontrado. */
+    fun setScannedPriceAndCheck(item: ShoppingItem, qty: Int, price: Double, priceLabel: String) =
+        viewModelScope.launch {
+            repo.updateItem(item.copy(
+                quantity           = qty,
+                selectedPrice      = price,
+                selectedPriceLabel = priceLabel,
+                checked            = true
+            ))
+        }
+
     fun updateItemQty(item: ShoppingItem, qty: Int) =
         viewModelScope.launch {
             if (qty <= 0) repo.deleteItem(item)

@@ -26,6 +26,7 @@ import com.listainteligente.ui.theme.*
 fun ListDetailScreen(
     listId: Long,
     onScan: () -> Unit,
+    onScanItem: (itemId: Long) -> Unit,
     onBack: () -> Unit,
     vm: ShoppingViewModel = hiltViewModel()
 ) {
@@ -93,11 +94,12 @@ fun ListDetailScreen(
                         }
                         items(items, key = { it.id }) { item ->
                             ShoppingItemRow(
-                                item      = item,
-                                onCheck   = { vm.toggleChecked(item) },
-                                onDelete  = { vm.deleteItem(item) },
-                                onQtyUp   = { vm.updateItemQty(item, item.quantity + 1) },
-                                onQtyDown = { vm.updateItemQty(item, item.quantity - 1) }
+                                item        = item,
+                                onScanPrice = { onScanItem(item.id) },
+                                onUncheck   = { vm.toggleChecked(item) },
+                                onDelete    = { vm.deleteItem(item) },
+                                onQtyUp     = { vm.updateItemQty(item, item.quantity + 1) },
+                                onQtyDown   = { vm.updateItemQty(item, item.quantity - 1) }
                             )
                         }
                     }
@@ -207,7 +209,8 @@ fun CategoryHeader(category: String) {
 @Composable
 fun ShoppingItemRow(
     item: ShoppingItem,
-    onCheck: () -> Unit,
+    onScanPrice: () -> Unit,
+    onUncheck: () -> Unit,
     onDelete: () -> Unit,
     onQtyUp: () -> Unit,
     onQtyDown: () -> Unit
@@ -216,8 +219,15 @@ fun ShoppingItemRow(
     val textColor = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant
                    else MaterialTheme.colorScheme.onSurface
 
+    // Item ainda não encontrado: tocar no checkbox/linha abre a câmera para ler o preço.
+    // Item já marcado: tocar de novo só desmarca (não precisa escanear outra vez).
+    val onRowTap = { if (item.checked) onUncheck() else onScanPrice() }
+
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .clickable(onClick = onRowTap),
         shape    = RoundedCornerShape(12.dp),
         color    = if (item.checked) MaterialTheme.colorScheme.surfaceVariant
                    else MaterialTheme.colorScheme.surface,
@@ -227,7 +237,7 @@ fun ShoppingItemRow(
             Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(checked = item.checked, onCheckedChange = { onCheck() })
+            Checkbox(checked = item.checked, onCheckedChange = { onRowTap() })
 
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                 Text(item.name, fontWeight = FontWeight.Medium,
