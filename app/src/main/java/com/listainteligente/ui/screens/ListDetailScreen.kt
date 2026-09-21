@@ -125,65 +125,85 @@ fun ListDetailScreen(
 
 @Composable
 fun BudgetSummaryBar(summary: ListSummary) {
+    val accentColor = when {
+        summary.isOverBudget                  -> Red700
+        summary.progressPercent > 0.85f       -> Orange700
+        else                                  -> Green700
+    }
     val bgColor = when {
         summary.isOverBudget                  -> Red100
         summary.progressPercent > 0.85f       -> Orange100
         else                                  -> Green100
     }
-    val textColor = when {
-        summary.isOverBudget            -> Red700
-        summary.progressPercent > 0.85f -> Orange700
-        else                            -> Green700
-    }
 
-    Surface(color = bgColor, shadowElevation = 4.dp) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 3.dp
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(bgColor),
+                contentAlignment = Alignment.Center
             ) {
-                Column {
-                    Text(
-                        "Total da lista",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Icon(
+                    if (summary.isOverBudget) Icons.Default.PriorityHigh else Icons.Default.Payments,
+                    null, tint = accentColor
+                )
+            }
+
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(
+                    "Total da lista",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "R$ ${"%.2f".format(summary.subtotal).replace(".", ",")}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (summary.budget > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress   = { summary.progressPercent },
+                        modifier   = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                        color      = accentColor,
+                        trackColor = accentColor.copy(alpha = 0.15f)
                     )
-                    Text(
-                        "R$ ${"%.2f".format(summary.subtotal).replace(".", ",")}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize   = 28.sp,
-                        color      = textColor
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        "${summary.checkedItems}/${summary.totalItems} itens",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (summary.budget > 0) {
-                        Text(
-                            if (summary.isOverBudget)
-                                "⚠ Acima do orçamento"
-                            else
-                                "Resta R$ ${"%.2f".format(summary.remaining).replace(".", ",")}",
-                            fontSize   = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color      = textColor
-                        )
-                    }
                 }
             }
 
-            if (summary.budget > 0) {
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { summary.progressPercent },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color    = textColor,
-                    trackColor = textColor.copy(alpha = 0.2f)
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+                Text(
+                    "${summary.checkedItems}/${summary.totalItems}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
                 )
+                Text(
+                    "itens",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (summary.budget > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (summary.isOverBudget)
+                            "Acima do orçamento"
+                        else
+                            "Resta R$ ${"%.2f".format(summary.remaining).replace(".", ",")}",
+                        fontSize   = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color      = accentColor
+                    )
+                }
             }
         }
     }
@@ -194,18 +214,31 @@ fun BudgetSummaryBar(summary: ListSummary) {
 @Composable
 fun CategoryHeader(category: String) {
     Surface(color = MaterialTheme.colorScheme.background) {
-        Text(
-            category,
-            fontWeight = FontWeight.SemiBold,
-            fontSize   = 13.sp,
-            color      = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier   = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(width = 3.dp, height = 14.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Green700)
+            )
+            Text(
+                category.uppercase(),
+                fontWeight = FontWeight.SemiBold,
+                fontSize   = 12.sp,
+                letterSpacing = 0.5.sp,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier   = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
 // ── Linha de item da lista ───────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingItemRow(
     item: ShoppingItem,
@@ -223,64 +256,101 @@ fun ShoppingItemRow(
     // Item já marcado: tocar de novo só desmarca (não precisa escanear outra vez).
     val onRowTap = { if (item.checked) onUncheck() else onScanPrice() }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .clickable(onClick = onRowTap),
-        shape    = RoundedCornerShape(12.dp),
-        color    = if (item.checked) MaterialTheme.colorScheme.surfaceVariant
-                   else MaterialTheme.colorScheme.surface,
-        shadowElevation = if (item.checked) 0.dp else 2.dp
-    ) {
-        Row(
-            Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(checked = item.checked, onCheckedChange = { onRowTap() })
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else false
+        }
+    )
 
-            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(item.name, fontWeight = FontWeight.Medium,
-                    textDecoration = textDecoration, color = textColor)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        item.selectedPriceLabel,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        " · R$ ${"%.2f".format(item.selectedPrice).replace(".", ",")} cada",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            backgroundContent = {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 20.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onRowTap),
+                shape    = RoundedCornerShape(12.dp),
+                color    = if (item.checked) MaterialTheme.colorScheme.surfaceVariant
+                           else MaterialTheme.colorScheme.surface,
+                shadowElevation = if (item.checked) 0.dp else 1.dp
+            ) {
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Indicador de status: check verde quando encontrado, aro vazio quando pendente
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (item.checked) Green700 else Color.Transparent)
+                            .border(
+                                width = if (item.checked) 0.dp else 1.5.dp,
+                                color = if (item.checked) Color.Transparent else MaterialTheme.colorScheme.outline,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(onClick = onRowTap),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (item.checked) {
+                            Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+                    }
 
-            // Controle de quantidade
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SmallQtyButton(Icons.Default.Remove, onClick = onQtyDown)
-                Text(
-                    "${item.quantity}",
-                    fontWeight = FontWeight.Bold,
-                    modifier   = Modifier.padding(horizontal = 8.dp),
-                    minLines   = 1
-                )
-                SmallQtyButton(Icons.Default.Add, onClick = onQtyUp)
-            }
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                        Text(item.name, fontWeight = FontWeight.Medium,
+                            textDecoration = textDecoration, color = textColor)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                item.selectedPriceLabel,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                " · R$ ${"%.2f".format(item.selectedPrice).replace(".", ",")} cada",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
-            // Total do item
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
-                Text(
-                    "R$ ${"%.2f".format(item.totalPrice).replace(".", ",")}",
-                    fontWeight = FontWeight.Bold,
-                    color      = Green700
-                )
-            }
+                    // Controle de quantidade
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SmallQtyButton(Icons.Default.Remove, onClick = onQtyDown)
+                        Text(
+                            "${item.quantity}",
+                            fontWeight = FontWeight.Bold,
+                            modifier   = Modifier.padding(horizontal = 8.dp),
+                            minLines   = 1
+                        )
+                        SmallQtyButton(Icons.Default.Add, onClick = onQtyUp)
+                    }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.Close, null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // Total do item
+                    Text(
+                        "R$ ${"%.2f".format(item.totalPrice).replace(".", ",")}",
+                        fontWeight = FontWeight.Bold,
+                        color      = Green700,
+                        modifier   = Modifier.padding(start = 10.dp)
+                    )
+                }
             }
         }
     }

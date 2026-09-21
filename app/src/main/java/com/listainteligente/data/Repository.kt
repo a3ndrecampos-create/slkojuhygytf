@@ -25,6 +25,7 @@ class ShoppingRepository @Inject constructor(
 
     fun getItems(listId: Long)        = itemDao.getItemsByList(listId)
     fun getPendingItems(listId: Long) = itemDao.getPendingItems(listId)
+    fun getAllItems()                 = itemDao.getAllItems()
 
     suspend fun addItem(item: ShoppingItem): Long  = itemDao.insert(item)
     suspend fun updateItem(item: ShoppingItem)     = itemDao.update(item)

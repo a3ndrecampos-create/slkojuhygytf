@@ -69,6 +69,16 @@ data class ListSummary(
     val progressPercent: Float get() = if (budget > 0) (subtotal / budget).toFloat().coerceIn(0f, 1f) else 0f
 }
 
+// ─── Progresso resumido de uma lista, pra exibir no card da Home ────────────
+
+data class ListProgress(
+    val totalItems: Int = 0,
+    val checkedItems: Int = 0,
+    val subtotal: Double = 0.0
+) {
+    val progressPercent: Float get() = if (totalItems > 0) checkedItems.toFloat() / totalItems else 0f
+}
+
 // ─── Categorias padrão ──────────────────────────────────────────────────────
 
 object Categories {

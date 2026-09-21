@@ -15,6 +15,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ListaInteligente">
 
+        <!-- Baixa o modelo de OCR do ML Kit logo após a instalação, em vez de
+             esperar o primeiro uso da câmera (evita falha silenciosa por
+             modelo ainda não disponível). -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr" />
+
         <activity
             android:name=".ui.screens.MainActivity"
             android:exported="true"

@@ -13,6 +13,7 @@ import javax.inject.Inject
 
 data class ListScreenState(
     val lists: List<ShoppingList> = emptyList(),
+    val progressByList: Map<Long, ListProgress> = emptyMap(),
     val isLoading: Boolean = true
 )
 
@@ -31,9 +32,21 @@ class ShoppingViewModel @Inject constructor(
 ) : ViewModel() {
 
     // Tela de listas
-    val listState: StateFlow<ListScreenState> = repo.getActiveLists()
-        .map { ListScreenState(lists = it, isLoading = false) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListScreenState())
+    val listState: StateFlow<ListScreenState> = combine(
+        repo.getActiveLists(),
+        repo.getAllItems()
+    ) { lists, allItems ->
+        val itemsByList = allItems.groupBy { it.listId }
+        val progress = lists.associate { list ->
+            val items = itemsByList[list.id].orEmpty()
+            list.id to ListProgress(
+                totalItems   = items.size,
+                checkedItems = items.count { it.checked },
+                subtotal     = items.sumOf { it.totalPrice }
+            )
+        }
+        ListScreenState(lists = lists, progressByList = progress, isLoading = false)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListScreenState())
 
     // Lista selecionada
     private val _selectedListId = MutableStateFlow<Long?>(null)

@@ -3,6 +3,7 @@ package com.listainteligente.ui.screens
 import android.Manifest
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,10 +14,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -24,6 +27,7 @@ import com.google.accompanist.permissions.*
 import com.listainteligente.model.PriceOption
 import com.listainteligente.model.ScannedLabel
 import com.listainteligente.service.CameraService
+import com.listainteligente.service.ScanEvent
 import com.listainteligente.ui.theme.*
 
 /**
@@ -45,6 +49,7 @@ fun ScannerScreen(
 
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     var scannedLabel    by remember { mutableStateOf<ScannedLabel?>(null) }
+    var scanHint        by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         if (!cameraPermission.status.isGranted) cameraPermission.launchPermissionRequest()
@@ -55,10 +60,23 @@ fun ScannerScreen(
     LaunchedEffect(cameraPermission.status.isGranted) {
         if (cameraPermission.status.isGranted) {
             cameraService.startScanning(previewView, lifecycleOwner)
-                .collect { label ->
-                    // Ignora novas detecções enquanto o card de resultado já está aberto,
-                    // pra não trocar a etiqueta escaneada debaixo do usuário.
-                    if (scannedLabel == null) scannedLabel = label
+                .collect { event ->
+                    when (event) {
+                        is ScanEvent.Detected -> {
+                            // Ignora novas detecções enquanto o card de resultado já está
+                            // aberto, pra não trocar a etiqueta escaneada debaixo do usuário.
+                            if (scannedLabel == null) {
+                                scannedLabel = event.label
+                                scanHint = null
+                            }
+                        }
+                        is ScanEvent.NoLabel -> scanHint = null
+                        is ScanEvent.Error -> {
+                            // Na 1ª execução o modelo de OCR pode ainda estar sendo baixado
+                            // pelo Play Services — mostra isso em vez de ficar mudo.
+                            scanHint = "Preparando leitor de texto… aponte para a etiqueta"
+                        }
+                    }
                 }
         }
     }
@@ -73,15 +91,20 @@ fun ScannerScreen(
             )
         }
 
-        // ── Guia de enquadramento ──────────────────────────────────────────
-        ScanOverlay()
+        // ── Guia de enquadramento (máscara escurecida + linha de scan) ──────
+        ScanOverlay(scanHint = scanHint)
 
-        // ── Toolbar ───────────────────────────────────────────────────────
+        // ── Toolbar com gradiente pra legibilidade sobre a câmera ───────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
+                    )
+                )
                 .statusBarsPadding()
-                .padding(16.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
@@ -92,17 +115,23 @@ fun ScannerScreen(
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
-                    modifier = Modifier.padding(start = 8.dp)
+                    modifier = Modifier.padding(start = 4.dp)
                 )
             }
             // Mostra pra qual item da lista o preço vai ser gravado
             if (currentItemName != null) {
-                Text(
-                    "Precificando: $currentItemName",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(start = 48.dp)
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.White.copy(alpha = 0.15f),
+                    modifier = Modifier.padding(start = 44.dp, top = 2.dp)
+                ) {
+                    Text(
+                        "Precificando: $currentItemName",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
 
@@ -143,30 +172,89 @@ fun ScannerScreen(
     }
 }
 
-// ── Moldura de guia de enquadramento ────────────────────────────────────────
+// ── Moldura de guia de enquadramento (máscara + linha animada) ──────────────
+
+private val ScanFrameWidth  = 300.dp
+private val ScanFrameHeight = 180.dp
 
 @Composable
-private fun BoxScope.ScanOverlay() {
+private fun BoxScope.ScanOverlay(scanHint: String?) {
+    val scrim = Color.Black.copy(alpha = 0.55f)
+
+    // Escurece tudo ao redor do quadro de leitura, deixando o "recorte" claro
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val sideWidth = ((maxWidth - ScanFrameWidth) / 2).coerceAtLeast(0.dp)
+        val topHeight = ((maxHeight - ScanFrameHeight) / 2).coerceAtLeast(0.dp)
+
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topHeight).background(scrim))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(topHeight).background(scrim))
+        Box(Modifier.align(Alignment.CenterStart).width(sideWidth).height(ScanFrameHeight).background(scrim))
+        Box(Modifier.align(Alignment.CenterEnd).width(sideWidth).height(ScanFrameHeight).background(scrim))
+    }
+
     Box(
         modifier = Modifier
             .align(Alignment.Center)
-            .size(width = 300.dp, height = 160.dp)
-            .border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+            .size(ScanFrameWidth, ScanFrameHeight)
+            .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp))
     ) {
-        // Cantos destacados
+        ScanLine()
+    }
+
+    // Cantos destacados (por cima da máscara, sem clip, pra ficarem nítidos)
+    Box(
+        modifier = Modifier.align(Alignment.Center).size(ScanFrameWidth, ScanFrameHeight)
+    ) {
         listOf(
             Alignment.TopStart, Alignment.TopEnd,
             Alignment.BottomStart, Alignment.BottomEnd
         ).forEach { Corner(it) }
     }
+
     Text(
-        "Aponte para a etiqueta de preço",
-        color    = Color.White,
-        fontSize = 13.sp,
+        scanHint ?: "Aponte para a etiqueta de preço",
+        color      = Color.White,
+        fontSize   = 13.sp,
+        textAlign  = TextAlign.Center,
+        fontWeight = if (scanHint != null) FontWeight.Medium else FontWeight.Normal,
         modifier = Modifier
             .align(Alignment.Center)
-            .offset(y = 100.dp)
+            .offset(y = ScanFrameHeight / 2 + 28.dp)
+            .padding(horizontal = 32.dp)
+            .fillMaxWidth()
     )
+}
+
+// ── Linha de varredura animada dentro do quadro ─────────────────────────────
+
+@Composable
+private fun ScanLine() {
+    val transition = rememberInfiniteTransition(label = "scanline")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue  = 1f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "scanlineProgress"
+    )
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val y = maxHeight * progress
+        Box(
+            Modifier
+                .offset(y = y)
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, Green500, Color.Transparent)
+                    )
+                )
+        )
+    }
 }
 
 @Composable

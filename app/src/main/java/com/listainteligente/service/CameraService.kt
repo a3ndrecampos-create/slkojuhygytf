@@ -15,19 +15,28 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.concurrent.Executors
 
+/** Resultado de um ciclo de análise de frame da câmera. */
+sealed class ScanEvent {
+    data class Detected(val label: ScannedLabel) : ScanEvent()
+    /** OCR rodou mas não achou nada parecido com etiqueta de preço no frame atual. */
+    object NoLabel : ScanEvent()
+    /** O reconhecedor de texto falhou (ex: modelo de OCR ainda baixando na 1ª vez). */
+    data class Error(val message: String) : ScanEvent()
+}
+
 class CameraService(private val context: Context) {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val executor   = Executors.newSingleThreadExecutor()
 
     /**
-     * Inicia a câmera e emite ScannedLabel sempre que detectar
-     * uma etiqueta de preço válida no frame.
+     * Inicia a câmera e emite um ScanEvent a cada frame analisado:
+     * etiqueta detectada, nada encontrado ainda, ou erro do OCR.
      */
     fun startScanning(
         previewView: PreviewView,
         lifecycleOwner: LifecycleOwner
-    ): Flow<ScannedLabel> = callbackFlow {
+    ): Flow<ScanEvent> = callbackFlow {
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var boundProvider: ProcessCameraProvider? = null
@@ -45,8 +54,8 @@ class CameraService(private val context: Context) {
                 .build()
 
             analysis.setAnalyzer(executor) { imageProxy ->
-                processFrame(imageProxy) { label ->
-                    trySend(label)
+                processFrame(imageProxy) { event ->
+                    trySend(event)
                 }
             }
 
@@ -59,7 +68,7 @@ class CameraService(private val context: Context) {
                     analysis
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                trySend(ScanEvent.Error(e.message ?: "Falha ao iniciar a câmera"))
             }
         }, ContextCompat.getMainExecutor(context))
 
@@ -77,7 +86,7 @@ class CameraService(private val context: Context) {
     @androidx.camera.core.ExperimentalGetImage
     private fun processFrame(
         imageProxy: ImageProxy,
-        onResult: (ScannedLabel) -> Unit
+        onResult: (ScanEvent) -> Unit
     ) {
         val mediaImage = imageProxy.image ?: run { imageProxy.close(); return }
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
@@ -85,25 +94,41 @@ class CameraService(private val context: Context) {
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val raw = visionText.text
-                // Só processa se parecer uma etiqueta de preço
                 if (isPriceLabel(raw)) {
                     val label = LabelParser.parse(raw)
                     if (label.priceOptions.isNotEmpty()) {
-                        onResult(label)
+                        onResult(ScanEvent.Detected(label))
+                    } else {
+                        onResult(ScanEvent.NoLabel)
                     }
+                } else {
+                    onResult(ScanEvent.NoLabel)
                 }
+            }
+            .addOnFailureListener { e ->
+                // Antes esse erro era engolido em silêncio (sem addOnFailureListener),
+                // por isso a câmera parecia "não ler nada" — na maioria das vezes é o
+                // modelo de OCR ainda sendo baixado pelo Play Services na 1ª execução.
+                onResult(ScanEvent.Error(e.message ?: "Erro ao processar imagem"))
             }
             .addOnCompleteListener { imageProxy.close() }
     }
 
     /**
-     * Heurística: texto tem "R$" e pelo menos um número com vírgula/ponto
+     * Heurística: procura por preço em R$ + algum contexto de etiqueta.
+     * Tolera OCR ruidoso (símbolo de R$ mal lido, espaçamento estranho).
      */
     private fun isPriceLabel(text: String): Boolean {
         val upper = text.uppercase()
-        return upper.contains("R$") &&
-               (upper.contains("VAREJO") || upper.contains("ATACADO") ||
-                upper.contains("UNIDADE") || upper.contains("KG") ||
-                Regex("""\d+[,\.]\d{2}""").containsMatchIn(text))
+
+        val hasCurrencyPrice = Regex("""R\s*\$?\s*\d{1,4}[,.]\d{2}""").containsMatchIn(upper)
+        val hasBarePrice     = Regex("""\b\d{1,4}[,.]\d{2}\b""").containsMatchIn(text)
+        val hasKeyword       = upper.contains("VAREJO") || upper.contains("ATACADO") ||
+                                upper.contains("UNIDADE") || upper.contains("UNITARIO") ||
+                                upper.contains("UNITÁRIO") || upper.contains("KG") ||
+                                upper.contains("CREDIFFATO") || upper.contains("PREÇO") ||
+                                upper.contains("PRECO")
+
+        return hasCurrencyPrice || (hasBarePrice && hasKeyword)
     }
 }

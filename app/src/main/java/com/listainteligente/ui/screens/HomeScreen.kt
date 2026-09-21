@@ -1,5 +1,6 @@
 package com.listainteligente.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,11 +11,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.listainteligente.model.ListProgress
 import com.listainteligente.model.ShoppingList
+import com.listainteligente.ui.theme.Green100
 import com.listainteligente.ui.theme.Green700
 import java.text.SimpleDateFormat
 import java.util.*
@@ -79,8 +83,12 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(state.lists, key = { it.id }) { list ->
-                    ShoppingListCard(list = list, onClick = { onOpenList(list.id) },
-                        onDelete = { vm.deleteList(list) })
+                    ShoppingListCard(
+                        list     = list,
+                        progress = state.progressByList[list.id] ?: ListProgress(),
+                        onClick  = { onOpenList(list.id) },
+                        onDelete = { vm.deleteList(list) }
+                    )
                 }
             }
         }
@@ -97,33 +105,99 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingListCard(list: ShoppingList, onClick: () -> Unit, onDelete: () -> Unit) {
+fun ShoppingListCard(
+    list: ShoppingList,
+    progress: ListProgress,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
     val fmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else false
+        }
+    )
 
-    ElevatedCard(
-        onClick   = onClick,
-        modifier  = Modifier.fillMaxWidth(),
-        shape     = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.elevatedCardElevation(2.dp)
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.ShoppingCart, null,
-                tint = Green700,
-                modifier = Modifier.size(36.dp)
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(list.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(
-                    buildString {
-                        if (list.store.isNotEmpty()) append("${list.store} · ")
-                        append(fmt.format(Date(list.createdAt)))
-                    },
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (list.budget > 0) {
+        ElevatedCard(
+            onClick   = onClick,
+            modifier  = Modifier.fillMaxWidth(),
+            shape     = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.elevatedCardElevation(1.dp)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Green100),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.ShoppingCart, null, tint = Green700, modifier = Modifier.size(24.dp))
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(list.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            buildString {
+                                if (list.store.isNotEmpty()) append("${list.store} · ")
+                                append(fmt.format(Date(list.createdAt)))
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(Icons.Default.ChevronRight, null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                if (progress.totalItems > 0) {
+                    Spacer(Modifier.height(14.dp))
+                    LinearProgressIndicator(
+                        progress = { progress.progressPercent },
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = Green700,
+                        trackColor = Green100
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "${progress.checkedItems}/${progress.totalItems} itens encontrados",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "R$ ${"%.2f".format(progress.subtotal).replace(".", ",")}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Green700
+                        )
+                    }
+                } else if (list.budget > 0) {
+                    Spacer(Modifier.height(6.dp))
                     Text(
                         "Orçamento: R$ ${"%.2f".format(list.budget).replace(".", ",")}",
                         fontSize   = 12.sp,
@@ -132,8 +206,6 @@ fun ShoppingListCard(list: ShoppingList, onClick: () -> Unit, onDelete: () -> Un
                     )
                 }
             }
-            Icon(Icons.Default.ChevronRight, null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

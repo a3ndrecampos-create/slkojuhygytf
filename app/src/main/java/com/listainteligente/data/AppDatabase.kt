@@ -62,6 +62,9 @@ interface ShoppingItemDao {
 
     @Query("SELECT COUNT(*) FROM shopping_items WHERE listId = :listId AND checked = 1")
     fun countCheckedByList(listId: Long): Flow<Int>
+
+    @Query("SELECT * FROM shopping_items")
+    fun getAllItems(): Flow<List<ShoppingItem>>
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────
