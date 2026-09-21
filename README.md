@@ -1,45 +1,46 @@
-# 🚦 Semáforo de Valores Pro
+# 🛒 Lista Inteligente
 
-App Android para motoristas de aplicativo (Uber, 99, inDrive) que mostra, sobre o app de corrida, se a oferta compensa: **verde / amarelo / vermelho**, com cálculo de combustível.
+App Android para lista de compras inteligente com **escaneamento de etiquetas** de supermercado via câmera.
 
 ## Funcionalidades
 
-- **Overlay automático** sobre Uber, 99 e inDrive
-- **Semáforo**: Verde ✅ / Amarelo ⚠️ / Vermelho ❌ (vale a pior métrica)
-- **5 métricas**: R$/km, R$/hora, lucro %, nota do passageiro, lucro líquido
-- **Combustível** calculado a partir de preço do litro e consumo do carro
-- **Histórico** de corridas aceitas/recusadas
-- **Ajustes** de todos os limites, apps monitorados e valor mínimo
+- 📷 **Escanear etiquetas** — aponte a câmera para a etiqueta e o app lê automaticamente todos os preços (varejo, atacado, clube, app)
+- 💰 **Escolha o melhor preço** — selecione entre as opções disponíveis e informe a quantidade
+- 🧮 **Totalizador em tempo real** — veja o total da lista atualizado a cada item, sem surpresas no caixa
+- 📊 **Controle de orçamento** — defina um limite e acompanhe quanto falta
+- ✅ **Marcar como pego** — risca o item da lista enquanto você faz compras
+- 📁 **Múltiplas listas** — organize por supermercado ou ocasião
+
+## Formatos de etiqueta suportados
+
+| Rede | Formatos |
+|------|----------|
+| Max Atacadista | Varejo / Atacado / Crediffato / Clube Max App |
+| Assaí | Varejo / Atacado |
+| Atacadão | Varejo / Atacado |
+| Supermercados em geral | Preço unitário / kg |
 
 ## Stack
 
-Kotlin · Jetpack Compose · AccessibilityService · WindowManager (overlay) · Room · DataStore
+- **Kotlin** + Jetpack Compose
+- **ML Kit Text Recognition** — OCR das etiquetas
+- **CameraX** — preview e análise de frames
+- **Room** — banco local das listas
+- **Hilt** — injeção de dependências
+- **DataStore** — preferências
 
 ## Build
 
-O projeto **não inclui** `gradlew` / `gradle-wrapper.jar` (arquivo binário). O workflow do GitHub Actions
-já instala o Gradle 8.9 sozinho, então basta dar push. Para builds locais:
-
 ```bash
-gradle assembleDebug            # com Gradle 8.9 instalado
-# ou gere o wrapper uma vez:
-gradle wrapper --gradle-version 8.9
+git clone https://github.com/SEU_USUARIO/ListaInteligente
+cd ListaInteligente
 ./gradlew assembleDebug
+# APK em: app/build/outputs/apk/debug/
 ```
 
-APK em `app/build/outputs/apk/debug/app-debug.apk`.
+## Permissões
 
-## Usar
-
-1. Instale o APK.
-2. Abra o app e conceda as 3 permissões (sobreposição, acessibilidade, notificações).
-   - Em Android 13+ com APK instalado fora da Play Store: *Config. → Apps → Semáforo de Valores → ⋮ → Permitir configurações restritas* antes de ativar a acessibilidade.
-3. Toque em **Iniciar monitoramento**.
-4. Use **Testar overlay** para ver o card sem precisar de uma corrida real.
-
-## Calibração (importante)
-
-A leitura da tela está em `RideAccessibilityService.kt` (`extractUberOffer`). Ela usa heurísticas de texto (`km`, `min`, `R$`) e precisa ser ajustada à versão atual de cada app. Veja o `SETUP.md`.
+- `CAMERA` — escanear etiquetas de preço
 
 ## Licença
 

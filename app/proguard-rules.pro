@@ -1,3 +1,3 @@
-# Regras extras de ProGuard/R8 (minificação está desligada por padrão).
--keep class com.semaforovalores.service.** { *; }
--keep class com.semaforovalores.model.** { *; }
+-keep class com.listainteligente.model.** { *; }
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**

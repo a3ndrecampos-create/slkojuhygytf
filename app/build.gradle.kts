@@ -3,23 +3,26 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
-    namespace = "com.semaforovalores"
-    compileSdk = 35
+    namespace   = "com.listainteligente"
+    compileSdk  = 35
 
     defaultConfig {
-        applicationId = "com.semaforovalores"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        applicationId   = "com.listainteligente"
+        minSdk          = 26
+        targetSdk       = 35
+        versionCode     = 1
+        versionName     = "1.0.0"
     }
 
     buildTypes {
+        debug   { isDebuggable = true }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled   = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -31,45 +34,50 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-    }
-
-    packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-    }
 }
 
 dependencies {
-    implementation(libs.androidx.core.ktx)
-
     // Compose
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.animation)
+    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.activity)
+    implementation(libs.compose.icons.extended)
+    debugImplementation(libs.compose.ui.tooling)
 
-    // Lifecycle / SavedState (necessários para o overlay em Compose)
-    implementation(libs.lifecycle.runtime.ktx)
-    implementation(libs.lifecycle.viewmodel.ktx)
-    implementation(libs.savedstate.ktx)
+    // Navigation
+    implementation(libs.navigation.compose)
 
-    // Room (histórico)
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+
+    // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // DataStore (configurações)
+    // DataStore
     implementation(libs.datastore.preferences)
+
+    // Lifecycle
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.ktx)
+
+    // CameraX
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+
+    // ML Kit OCR — lê etiquetas de preço
+    implementation(libs.mlkit.text.recognition)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
-    // Testes
     testImplementation(libs.junit)
 }
