@@ -32,13 +32,22 @@ object LabelParser {
 
     private fun extractProductName(lines: List<String>): String {
         // Primeira linha geralmente é o nome
-        return lines.firstOrNull { line ->
+        val raw = lines.firstOrNull { line ->
             line.length > 4 &&
             !line.matches(Regex(".*R\\\$.*")) &&
             !line.contains("VAREJO", ignoreCase = true) &&
             !line.contains("ATACADO", ignoreCase = true) &&
             !line.contains("EAN", ignoreCase = true)
-        }?.take(60) ?: "Produto"
+        } ?: return "Produto"
+
+        // Etiquetas reais costumam vir com sujeira no final, ex: "PARAFUSO, ."
+        val cleaned = raw
+            .trim()
+            .trimEnd('.', ',', ' ', '-', ':')
+            .replace(Regex("\\s{2,}"), " ")
+            .take(60)
+
+        return cleaned.ifBlank { "Produto" }
     }
 
     // ── EAN / código de barras ───────────────────────────────────────────────

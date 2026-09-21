@@ -34,6 +34,7 @@ import com.listainteligente.ui.theme.*
 @Composable
 fun ScannerScreen(
     listId: Long,
+    currentItemName: String? = null,
     onItemAdded: (name: String, qty: Int, price: Double, priceLabel: String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -76,23 +77,33 @@ fun ScannerScreen(
         ScanOverlay()
 
         // ── Toolbar ───────────────────────────────────────────────────────
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, null, tint = Color.White)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, null, tint = Color.White)
+                }
+                Text(
+                    "Escanear etiqueta",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             }
-            Text(
-                "Escanear etiqueta",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(start = 8.dp)
-            )
+            // Mostra pra qual item da lista o preço vai ser gravado
+            if (currentItemName != null) {
+                Text(
+                    "Precificando: $currentItemName",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(start = 48.dp)
+                )
+            }
         }
 
         // ── Resultado do scan ──────────────────────────────────────────────
@@ -104,7 +115,8 @@ fun ScannerScreen(
         ) {
             scannedLabel?.let { label ->
                 ScannedResultCard(
-                    label    = label,
+                    label           = label,
+                    currentItemName = currentItemName,
                     onSelect = { option, qty ->
                         onItemAdded(label.productName, qty, option.price, option.label)
                         scannedLabel = null
@@ -177,11 +189,16 @@ private fun BoxScope.Corner(alignment: Alignment) {
 @Composable
 fun ScannedResultCard(
     label: ScannedLabel,
+    currentItemName: String? = null,
     onSelect: (PriceOption, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedOption by remember { mutableStateOf(label.priceOptions.minByOrNull { it.price }) }
     var qty by remember { mutableStateOf(selectedOption?.minQty ?: 1) }
+
+    val willRename = currentItemName != null &&
+        !currentItemName.equals(label.productName, ignoreCase = true) &&
+        !label.productName.equals("Produto", ignoreCase = true)
 
     Surface(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -198,6 +215,21 @@ fun ScannedResultCard(
             }
             Spacer(Modifier.height(12.dp))
             Text(label.productName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            // Deixa claro que o nome do item vai ser atualizado pro que está na etiqueta
+            if (willRename) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Edit, null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Renomeando \"$currentItemName\" → \"${label.productName}\"",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Spacer(Modifier.height(16.dp))
 
             // Opções de preço

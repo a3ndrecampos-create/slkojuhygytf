@@ -62,12 +62,13 @@ fun AppNavigation() {
             val vm: ShoppingViewModel = androidx.hilt.navigation.compose.hiltViewModel(
                 navController.getBackStackEntry("detail/$listId")
             )
+            val existingItem = if (itemId != -1L) vm.findItem(itemId) else null
             ScannerScreen(
-                listId = listId,
+                listId          = listId,
+                currentItemName = existingItem?.name,
                 onItemAdded = { name, qty, price, label ->
-                    val existing = if (itemId != -1L) vm.findItem(itemId) else null
-                    if (existing != null) {
-                        vm.setScannedPriceAndCheck(existing, qty, price, label)
+                    if (existingItem != null) {
+                        vm.setScannedPriceAndCheck(existingItem, name, qty, price, label)
                     } else {
                         vm.addItem(listId, name, qty, price, label)
                     }

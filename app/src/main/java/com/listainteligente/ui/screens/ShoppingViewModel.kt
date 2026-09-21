@@ -101,10 +101,17 @@ class ShoppingViewModel @Inject constructor(
     fun findItem(id: Long): ShoppingItem? = detailState.value.items.find { it.id == id }
 
     /** Chamado após escanear a etiqueta de um item já existente na lista:
-     *  grava o preço/quantidade lidos e marca o item como encontrado. */
-    fun setScannedPriceAndCheck(item: ShoppingItem, qty: Int, price: Double, priceLabel: String) =
+     *  renomeia o item para o que está na etiqueta (fica fácil conferir que é
+     *  o produto certo), grava o preço/quantidade lidos e marca como encontrado. */
+    fun setScannedPriceAndCheck(item: ShoppingItem, scannedName: String, qty: Int, price: Double, priceLabel: String) =
         viewModelScope.launch {
+            // Só troca o nome se o OCR conseguiu ler algo de verdade — se caiu no
+            // fallback genérico "Produto", mantém o nome que o usuário já tinha.
+            val newName = if (scannedName.isNotBlank() && !scannedName.equals("Produto", ignoreCase = true))
+                scannedName else item.name
+
             repo.updateItem(item.copy(
+                name               = newName,
                 quantity           = qty,
                 selectedPrice      = price,
                 selectedPriceLabel = priceLabel,
