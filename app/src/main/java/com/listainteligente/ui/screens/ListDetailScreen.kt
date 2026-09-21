@@ -21,8 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.listainteligente.model.*
 import com.listainteligente.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ListDetailScreen(
     listId: Long,
