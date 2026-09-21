@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Notepad body, kept inside the adaptive-icon safe zone (center 66dp) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,26 H73 A6,6 0 0 1 79,32 V80 A6,6 0 0 1 73,86 H35 A6,6 0 0 1 29,80 V32 A6,6 0 0 1 35,26 Z" />
+    <!-- Checklist lines -->
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M40,42 L48,50 L58,38 L61,41 L48,56 L37,45 Z" />
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M40,60 H70 V64 H40 Z" />
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M40,68 H70 V72 H40 Z" />
+</vector>
