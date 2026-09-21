@@ -22,6 +22,7 @@ import com.listainteligente.model.*
 import com.listainteligente.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ListDetailScreen(
     listId: Long,
