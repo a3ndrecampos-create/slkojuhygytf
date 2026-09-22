@@ -53,6 +53,9 @@ dependencies {
     // Permissões em runtime para Compose (usado na tela de scanner)
     implementation(libs.accompanist.permissions)
 
+    // Splash screen nativa (compatível até API 21)
+    implementation(libs.core.splashscreen)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

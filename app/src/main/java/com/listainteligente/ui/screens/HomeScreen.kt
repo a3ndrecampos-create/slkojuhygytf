@@ -84,10 +84,11 @@ fun HomeScreen(
             ) {
                 items(state.lists, key = { it.id }) { list ->
                     ShoppingListCard(
-                        list     = list,
-                        progress = state.progressByList[list.id] ?: ListProgress(),
-                        onClick  = { onOpenList(list.id) },
-                        onDelete = { vm.deleteList(list) }
+                        list        = list,
+                        progress    = state.progressByList[list.id] ?: ListProgress(),
+                        onClick     = { onOpenList(list.id) },
+                        onDelete    = { vm.deleteList(list) },
+                        onDuplicate = { vm.duplicateList(list) }
                     )
                 }
             }
@@ -111,31 +112,38 @@ fun ShoppingListCard(
     list: ShoppingList,
     progress: ListProgress,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onDuplicate: () -> Unit
 ) {
     val fmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
+            when (value) {
+                SwipeToDismissBoxValue.EndToStart -> { onDelete(); true }
+                // Duplicar não remove o card da tela — só dispara a ação e volta ao lugar
+                SwipeToDismissBoxValue.StartToEnd -> { onDuplicate(); false }
+                else -> false
+            }
         }
     )
 
     SwipeToDismissBox(
         state = dismissState,
-        enableDismissFromStartToEnd = false,
         backgroundContent = {
+            val isDuplicateSide = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             Box(
                 Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .background(if (isDuplicateSide) Green100 else MaterialTheme.colorScheme.errorContainer)
                     .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.CenterEnd
+                contentAlignment = if (isDuplicateSide) Alignment.CenterStart else Alignment.CenterEnd
             ) {
-                Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                Icon(
+                    if (isDuplicateSide) Icons.Default.ContentCopy else Icons.Default.DeleteOutline,
+                    null,
+                    tint = if (isDuplicateSide) Green700 else MaterialTheme.colorScheme.onErrorContainer
+                )
             }
         }
     ) {

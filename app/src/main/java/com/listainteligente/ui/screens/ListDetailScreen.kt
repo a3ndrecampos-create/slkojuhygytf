@@ -1,5 +1,6 @@
 package com.listainteligente.ui.screens
 
+import android.content.Intent
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -33,6 +35,7 @@ fun ListDetailScreen(
     LaunchedEffect(listId) { vm.selectList(listId) }
     val state by vm.detailState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -49,6 +52,16 @@ fun ListDetailScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val text = buildShareText(state.list, state.items)
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Compartilhar lista"))
+                    }) {
+                        Icon(Icons.Default.Share, null)
+                    }
                     IconButton(onClick = { vm.deleteChecked(listId) }) {
                         Icon(Icons.Default.DeleteSweep, null)
                     }
@@ -119,6 +132,32 @@ fun ListDetailScreen(
             onDismiss = { showAddDialog = false }
         )
     }
+}
+
+// ── Texto formatado pra compartilhar a lista (WhatsApp, etc.) ───────────────
+
+private fun buildShareText(list: ShoppingList?, items: List<ShoppingItem>): String {
+    val sb = StringBuilder()
+    sb.appendLine("🛒 ${list?.name ?: "Lista de compras"}")
+    if (!list?.store.isNullOrEmpty()) sb.appendLine("📍 ${list?.store}")
+    sb.appendLine()
+
+    items.groupBy { it.category }.forEach { (category, categoryItems) ->
+        sb.appendLine("• $category")
+        categoryItems.forEach { item ->
+            val mark = if (item.checked) "✅" else "⬜"
+            val priceInfo = if (item.selectedPrice > 0)
+                " — R$ ${"%.2f".format(item.totalPrice).replace(".", ",")}" else ""
+            sb.appendLine("  $mark ${item.name} (${item.quantity}x)$priceInfo")
+        }
+        sb.appendLine()
+    }
+
+    val total = items.sumOf { it.totalPrice }
+    sb.appendLine("Total: R$ ${"%.2f".format(total).replace(".", ",")}")
+    sb.appendLine()
+    sb.append("Feito com Lista Inteligente 📱")
+    return sb.toString()
 }
 
 // ── Barra de orçamento/totalizador ──────────────────────────────────────────

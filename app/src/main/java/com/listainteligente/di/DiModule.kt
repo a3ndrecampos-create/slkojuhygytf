@@ -3,6 +3,7 @@ package com.listainteligente.di
 import android.content.Context
 import androidx.room.Room
 import com.listainteligente.data.AppDatabase
+import com.listainteligente.data.PriceHistoryDao
 import com.listainteligente.data.ShoppingItemDao
 import com.listainteligente.data.ShoppingListDao
 import com.listainteligente.service.CameraService
@@ -28,6 +29,9 @@ object DiModule {
 
     @Provides @Singleton
     fun provideItemDao(db: AppDatabase): ShoppingItemDao = db.itemDao()
+
+    @Provides @Singleton
+    fun providePriceHistoryDao(db: AppDatabase): PriceHistoryDao = db.priceHistoryDao()
 
     @Provides @Singleton
     fun provideCameraService(@ApplicationContext ctx: Context) = CameraService(ctx)

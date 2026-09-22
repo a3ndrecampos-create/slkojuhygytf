@@ -39,6 +39,7 @@ import com.listainteligente.ui.theme.*
 fun ScannerScreen(
     listId: Long,
     currentItemName: String? = null,
+    onLookupLowestPrice: suspend (String) -> Double? = { null },
     onItemAdded: (name: String, qty: Int, price: Double, priceLabel: String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -50,9 +51,15 @@ fun ScannerScreen(
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     var scannedLabel    by remember { mutableStateOf<ScannedLabel?>(null) }
     var scanHint        by remember { mutableStateOf<String?>(null) }
+    var historicalLow   by remember { mutableStateOf<Double?>(null) }
 
     LaunchedEffect(Unit) {
         if (!cameraPermission.status.isGranted) cameraPermission.launchPermissionRequest()
+    }
+
+    // Busca o menor preço já visto pra esse produto assim que uma etiqueta é detectada
+    LaunchedEffect(scannedLabel) {
+        historicalLow = scannedLabel?.let { onLookupLowestPrice(it.productName) }
     }
 
     // Só liga a câmera + OCR depois que a permissão for concedida.
@@ -146,6 +153,7 @@ fun ScannerScreen(
                 ScannedResultCard(
                     label           = label,
                     currentItemName = currentItemName,
+                    historicalLow   = historicalLow,
                     onSelect = { option, qty ->
                         onItemAdded(label.productName, qty, option.price, option.label)
                         scannedLabel = null
@@ -278,6 +286,7 @@ private fun BoxScope.Corner(alignment: Alignment) {
 fun ScannedResultCard(
     label: ScannedLabel,
     currentItemName: String? = null,
+    historicalLow: Double? = null,
     onSelect: (PriceOption, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -319,6 +328,13 @@ fun ScannedResultCard(
                 }
             }
             Spacer(Modifier.height(16.dp))
+
+            // Comparação com o menor preço já visto pra esse produto
+            val currentBestPrice = label.priceOptions.minByOrNull { it.price }?.price
+            if (historicalLow != null && currentBestPrice != null && historicalLow > 0) {
+                PriceHistoryBadge(currentPrice = currentBestPrice, historicalLow = historicalLow)
+                Spacer(Modifier.height(12.dp))
+            }
 
             // Opções de preço
             Text("Selecione o preço:", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -380,6 +396,44 @@ fun ScannedResultCard(
         }
     }
 }
+
+// ── Selo de comparação com o histórico de preços ─────────────────────────────
+
+@Composable
+fun PriceHistoryBadge(currentPrice: Double, historicalLow: Double) {
+    val diffPercent = ((currentPrice - historicalLow) / historicalLow) * 100
+
+    val (bgColor, textColor, icon, message) = when {
+        diffPercent <= -1.0 -> {
+            // Preço atual é mais barato que qualquer preço já visto antes
+            Quadruple(Green100, Green700, Icons.Default.TrendingDown,
+                "Menor preço já visto! ${"%.0f".format(-diffPercent)}% mais barato")
+        }
+        diffPercent >= 1.0 -> {
+            Quadruple(Orange100, Orange700, Icons.Default.TrendingUp,
+                "${"%.0f".format(diffPercent)}% acima do menor preço já visto")
+        }
+        else -> {
+            Quadruple(Blue100, Blue700, Icons.Default.TrendingFlat,
+                "Igual ao menor preço já visto")
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(bgColor)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = textColor, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(message, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textColor)
+    }
+}
+
+private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 // ── Card de opção de preço ───────────────────────────────────────────────────
 

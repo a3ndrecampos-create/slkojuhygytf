@@ -69,6 +69,23 @@ data class ListSummary(
     val progressPercent: Float get() = if (budget > 0) (subtotal / budget).toFloat().coerceIn(0f, 1f) else 0f
 }
 
+// ─── Histórico de preços por produto ─────────────────────────────────────────
+
+@Entity(tableName = "price_history")
+data class PriceHistoryEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val productName: String,     // nome normalizado — ver normalizeProductName()
+    val price: Double,
+    val priceLabel: String = "Varejo",
+    val store: String = "",
+    val scannedAt: Long = System.currentTimeMillis()
+)
+
+/** Normaliza o nome do produto pra comparar entre escaneamentos (mesma etiqueta
+ *  pode vir com espaçamento/caixa ligeiramente diferentes a cada leitura). */
+fun normalizeProductName(name: String): String =
+    name.trim().lowercase().replace(Regex("\\s{2,}"), " ")
+
 // ─── Progresso resumido de uma lista, pra exibir no card da Home ────────────
 
 data class ListProgress(

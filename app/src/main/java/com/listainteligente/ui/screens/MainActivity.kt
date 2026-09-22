@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -14,6 +15,7 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -66,6 +68,7 @@ fun AppNavigation() {
             ScannerScreen(
                 listId          = listId,
                 currentItemName = existingItem?.name,
+                onLookupLowestPrice = { productName -> vm.getLowestPrice(productName) },
                 onItemAdded = { name, qty, price, label ->
                     if (existingItem != null) {
                         vm.setScannedPriceAndCheck(existingItem, name, qty, price, label)

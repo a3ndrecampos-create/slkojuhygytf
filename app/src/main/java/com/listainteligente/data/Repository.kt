@@ -9,7 +9,8 @@ import javax.inject.Singleton
 @Singleton
 class ShoppingRepository @Inject constructor(
     private val listDao: ShoppingListDao,
-    private val itemDao: ShoppingItemDao
+    private val itemDao: ShoppingItemDao,
+    private val priceHistoryDao: PriceHistoryDao
 ) {
     // ── Listas ───────────────────────────────────────────────────────────────
 
@@ -33,6 +34,22 @@ class ShoppingRepository @Inject constructor(
     suspend fun setChecked(id: Long, checked: Boolean) = itemDao.setChecked(id, checked)
     suspend fun updateQty(id: Long, qty: Int)          = itemDao.updateQty(id, qty)
     suspend fun deleteChecked(listId: Long)            = itemDao.deleteChecked(listId)
+
+    // ── Histórico de preços ──────────────────────────────────────────────────
+
+    suspend fun recordPrice(productName: String, price: Double, priceLabel: String, store: String = "") =
+        priceHistoryDao.insert(
+            PriceHistoryEntry(
+                productName = normalizeProductName(productName),
+                price       = price,
+                priceLabel  = priceLabel,
+                store       = store
+            )
+        )
+
+    /** Menor preço já visto pra esse produto, ANTES do preço atual (pra comparar). */
+    suspend fun getLowestPrice(productName: String): Double? =
+        priceHistoryDao.getLowestPrice(normalizeProductName(productName))
 
     // ── Resumo financeiro ────────────────────────────────────────────────────
 

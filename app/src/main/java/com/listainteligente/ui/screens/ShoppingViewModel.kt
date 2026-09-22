@@ -79,6 +79,17 @@ class ShoppingViewModel @Inject constructor(
     fun deleteList(list: ShoppingList) =
         viewModelScope.launch { repo.deleteList(list) }
 
+    /** Duplica a lista (útil pra compras recorrentes, tipo "Compras do mês"):
+     *  cria uma nova lista e copia os itens, todos desmarcados. */
+    fun duplicateList(list: ShoppingList) =
+        viewModelScope.launch {
+            val newId = repo.createList("${list.name} (cópia)", list.budget, list.store)
+            val items = repo.getItems(list.id).first()
+            items.forEach { item ->
+                repo.addItem(item.copy(id = 0, listId = newId, checked = false))
+            }
+        }
+
     fun updateListBudget(list: ShoppingList, budget: Double) =
         viewModelScope.launch { repo.updateList(list.copy(budget = budget)) }
 
@@ -104,6 +115,7 @@ class ShoppingViewModel @Inject constructor(
             category          = category,
             note              = note
         ))
+        if (price > 0) repo.recordPrice(name, price, priceLabel)
     }
 
     fun updateItemPrice(item: ShoppingItem, price: Double, priceLabel: String) =
@@ -112,6 +124,9 @@ class ShoppingViewModel @Inject constructor(
         }
 
     fun findItem(id: Long): ShoppingItem? = detailState.value.items.find { it.id == id }
+
+    /** Menor preço já visto pra esse produto — usado no scanner pra comparar com o preço atual. */
+    suspend fun getLowestPrice(productName: String): Double? = repo.getLowestPrice(productName)
 
     /** Chamado após escanear a etiqueta de um item já existente na lista:
      *  renomeia o item para o que está na etiqueta (fica fácil conferir que é
@@ -130,6 +145,7 @@ class ShoppingViewModel @Inject constructor(
                 selectedPriceLabel = priceLabel,
                 checked            = true
             ))
+            if (price > 0) repo.recordPrice(newName, price, priceLabel)
         }
 
     fun updateItemQty(item: ShoppingItem, qty: Int) =

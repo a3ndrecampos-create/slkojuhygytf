@@ -1,6 +1,7 @@
 package com.listainteligente.data
 
 import androidx.room.*
+import com.listainteligente.model.PriceHistoryEntry
 import com.listainteligente.model.ShoppingItem
 import com.listainteligente.model.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -67,14 +68,28 @@ interface ShoppingItemDao {
     fun getAllItems(): Flow<List<ShoppingItem>>
 }
 
+@Dao
+interface PriceHistoryDao {
+    @Insert
+    suspend fun insert(entry: PriceHistoryEntry)
+
+    /** Menor preço já registrado pra esse produto (nome normalizado), antes do preço atual. */
+    @Query("SELECT MIN(price) FROM price_history WHERE productName = :normalizedName")
+    suspend fun getLowestPrice(normalizedName: String): Double?
+
+    @Query("SELECT * FROM price_history WHERE productName = :normalizedName ORDER BY scannedAt DESC LIMIT 30")
+    fun getHistoryForProduct(normalizedName: String): Flow<List<PriceHistoryEntry>>
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
-    entities  = [ShoppingList::class, ShoppingItem::class],
-    version   = 1,
+    entities  = [ShoppingList::class, ShoppingItem::class, PriceHistoryEntry::class],
+    version   = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun listDao(): ShoppingListDao
     abstract fun itemDao(): ShoppingItemDao
+    abstract fun priceHistoryDao(): PriceHistoryDao
 }
