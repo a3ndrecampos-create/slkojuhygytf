@@ -35,7 +35,20 @@ fun ListDetailScreen(
     LaunchedEffect(listId) { vm.selectList(listId) }
     val state by vm.detailState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showCompletionDialog by remember { mutableStateOf(false) }
+    var purchaseSavings by remember { mutableStateOf<Double?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var itemFilter by remember { mutableStateOf(ItemFilter.TODOS) }
     val context = LocalContext.current
+
+    val isComplete = state.summary.totalItems > 0 && state.summary.checkedItems == state.summary.totalItems
+
+    LaunchedEffect(showCompletionDialog) {
+        if (showCompletionDialog) {
+            purchaseSavings = state.list?.let { vm.computePurchaseSavings(state.items, it.createdAt) }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -52,6 +65,11 @@ fun ListDetailScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
                 },
                 actions = {
+                    if (isComplete) {
+                        IconButton(onClick = { showCompletionDialog = true }) {
+                            Icon(Icons.Default.TaskAlt, null, tint = Green700)
+                        }
+                    }
                     IconButton(onClick = {
                         val text = buildShareText(state.list, state.items)
                         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -62,8 +80,32 @@ fun ListDetailScreen(
                     }) {
                         Icon(Icons.Default.Share, null)
                     }
-                    IconButton(onClick = { vm.deleteChecked(listId) }) {
-                        Icon(Icons.Default.DeleteSweep, null)
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, null)
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Repetir lista") },
+                                leadingIcon = { Icon(Icons.Default.Replay, null) },
+                                onClick = {
+                                    state.list?.let { vm.repeatList(it) }
+                                    showMenu = false
+                                    android.widget.Toast.makeText(
+                                        context, "Lista repetida! Veja na tela inicial.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Limpar comprados") },
+                                leadingIcon = { Icon(Icons.Default.DeleteSweep, null) },
+                                onClick = {
+                                    vm.deleteChecked(listId)
+                                    showMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -91,29 +133,59 @@ fun ListDetailScreen(
             BudgetSummaryBar(summary = state.summary)
 
             // ── Lista de itens por categoria ────────────────────────────────
-            val grouped = state.items.groupBy { it.category }
-
             if (state.items.isEmpty()) {
-                EmptyListHint(onScan = onScan, onAdd = { showAddDialog = true })
+                EmptyListHint(
+                    listType = state.list?.listType ?: ListTypes.MERCADO,
+                    onScan = onScan,
+                    onAdd = { showAddDialog = true }
+                )
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 140.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    grouped.forEach { (category, items) ->
-                        stickyHeader {
-                            CategoryHeader(category)
-                        }
-                        items(items, key = { it.id }) { item ->
-                            ShoppingItemRow(
-                                item        = item,
-                                onScanPrice = { onScanItem(item.id) },
-                                onUncheck   = { vm.toggleChecked(item) },
-                                onDelete    = { vm.deleteItem(item) },
-                                onQtyUp     = { vm.updateItemQty(item, item.quantity + 1) },
-                                onQtyDown   = { vm.updateItemQty(item, item.quantity - 1) }
-                            )
+                SearchAndFilterBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    filter = itemFilter,
+                    onFilterChange = { itemFilter = it }
+                )
+
+                val filteredItems = state.items.filter { item ->
+                    val matchesQuery = searchQuery.isBlank() ||
+                        item.name.contains(searchQuery, ignoreCase = true)
+                    val matchesFilter = when (itemFilter) {
+                        ItemFilter.TODOS      -> true
+                        ItemFilter.PENDENTES  -> !item.checked
+                        ItemFilter.COMPRADOS  -> item.checked
+                    }
+                    matchesQuery && matchesFilter
+                }
+                val grouped = filteredItems.groupBy { it.category }
+
+                if (filteredItems.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Nenhum item encontrado",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 140.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        grouped.forEach { (category, items) ->
+                            stickyHeader {
+                                CategoryHeader(category)
+                            }
+                            items(items, key = { it.id }) { item ->
+                                ShoppingItemRow(
+                                    item        = item,
+                                    onScanPrice = { onScanItem(item.id) },
+                                    onUncheck   = { vm.toggleChecked(item) },
+                                    onDelete    = { vm.deleteItem(item) },
+                                    onQtyUp     = { vm.updateItemQty(item, item.quantity + 1) },
+                                    onQtyDown   = { vm.updateItemQty(item, item.quantity - 1) }
+                                )
+                            }
                         }
                     }
                 }
@@ -125,13 +197,100 @@ fun ListDetailScreen(
     if (showAddDialog) {
         AddItemDialog(
             listId  = listId,
-            onAdd   = { name, qty, price, label ->
-                vm.addItem(listId, name, qty, price, label)
+            onAdd   = { name, qty, price, label, unit, category ->
+                vm.addItem(listId, name, qty, price, label, unit, category)
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false }
         )
     }
+
+    // Resumo ao finalizar a compra
+    if (showCompletionDialog) {
+        PurchaseCompletionDialog(
+            summary  = state.summary,
+            savings  = purchaseSavings,
+            onDismiss = { showCompletionDialog = false }
+        )
+    }
+}
+
+enum class ItemFilter { TODOS, PENDENTES, COMPRADOS }
+
+@Composable
+private fun SearchAndFilterBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    filter: ItemFilter,
+    onFilterChange: (ItemFilter) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = { Text("Procurar produto") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, null)
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = filter == ItemFilter.TODOS, onClick = { onFilterChange(ItemFilter.TODOS) },
+                label = { Text("Todos") })
+            FilterChip(selected = filter == ItemFilter.PENDENTES, onClick = { onFilterChange(ItemFilter.PENDENTES) },
+                label = { Text("Pendentes") })
+            FilterChip(selected = filter == ItemFilter.COMPRADOS, onClick = { onFilterChange(ItemFilter.COMPRADOS) },
+                label = { Text("Comprados") })
+        }
+    }
+}
+
+@Composable
+fun PurchaseCompletionDialog(summary: ListSummary, savings: Double?, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon  = { Icon(Icons.Default.TaskAlt, null, tint = Green700) },
+        title = { Text("Compra finalizada!") },
+        text = {
+            Column {
+                Text("${summary.totalItems} produtos · ${summary.checkedItems} encontrados",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "R$ ${"%.2f".format(summary.subtotal).replace(".", ",")}",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(Modifier.height(10.dp))
+                when {
+                    savings == null -> Text(
+                        "Sem histórico suficiente pra calcular economia ainda.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    savings > 0.009 -> Text(
+                        "Você economizou R$ ${"%.2f".format(savings).replace(".", ",")} comparado ao menor preço visto antes desta lista.",
+                        color = Green700, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
+                    )
+                    savings < -0.009 -> Text(
+                        "Pagou R$ ${"%.2f".format(-savings).replace(".", ",")} a mais do que o menor preço já visto antes.",
+                        color = Orange700, fontSize = 13.sp
+                    )
+                    else -> Text(
+                        "Pagou exatamente o menor preço já visto antes.",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onDismiss) { Text("Fechar") } }
+    )
 }
 
 // ── Texto formatado pra compartilhar a lista (WhatsApp, etc.) ───────────────
@@ -358,7 +517,7 @@ fun ShoppingItemRow(
                             textDecoration = textDecoration, color = textColor)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                item.selectedPriceLabel,
+                                "${item.quantity} ${item.unit} · ${item.selectedPriceLabel}",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -412,19 +571,22 @@ fun SmallQtyButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClic
 // ── Dica quando lista vazia ──────────────────────────────────────────────────
 
 @Composable
-fun EmptyListHint(onScan: () -> Unit, onAdd: () -> Unit) {
+fun EmptyListHint(listType: String = ListTypes.MERCADO, onScan: () -> Unit, onAdd: () -> Unit) {
+    val subtitle = when (listType) {
+        ListTypes.FARMACIA -> "Escaneie a caixa do medicamento ou adicione manualmente"
+        ListTypes.CASA     -> "Escaneie um produto ou adicione o que falta em casa"
+        else               -> "Escaneie uma etiqueta ou adicione itens manualmente"
+    }
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.ShoppingCart, null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.outline)
+        Text(ListTypes.emoji(listType), fontSize = 56.sp)
         Spacer(Modifier.height(16.dp))
         Text("Lista vazia", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         Spacer(Modifier.height(8.dp))
-        Text("Escaneie uma etiqueta ou adicione itens manualmente",
+        Text(subtitle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp)
         Spacer(Modifier.height(24.dp))
@@ -444,21 +606,28 @@ fun EmptyListHint(onScan: () -> Unit, onAdd: () -> Unit) {
 
 // ── Dialog de adição manual ──────────────────────────────────────────────────
 
+private val itemUnits = listOf("un", "cx", "pct", "kg", "g", "L", "ml")
+
 @Composable
 fun AddItemDialog(
     listId: Long,
-    onAdd: (name: String, qty: Int, price: Double, label: String) -> Unit,
+    onAdd: (name: String, qty: Int, price: Double, label: String, unit: String, category: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var name  by remember { mutableStateOf("") }
-    var qty   by remember { mutableStateOf("1") }
-    var price by remember { mutableStateOf("") }
+    var name     by remember { mutableStateOf("") }
+    var qty      by remember { mutableStateOf("1") }
+    var price    by remember { mutableStateOf("") }
+    var unit     by remember { mutableStateOf("un") }
+    var category by remember { mutableStateOf("Outros") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Adicionar item") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Nome do produto") },
@@ -476,13 +645,27 @@ fun AddItemDialog(
                         modifier = Modifier.weight(2f)
                     )
                 }
+
+                Text("Unidade", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(itemUnits) { u ->
+                        FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u) })
+                    }
+                }
+
+                Text("Categoria", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(Categories.all) { c ->
+                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) })
+                    }
+                }
             }
         },
         confirmButton = {
             Button(onClick = {
                 val p = price.replace(",", ".").toDoubleOrNull() ?: 0.0
                 val q = qty.toIntOrNull() ?: 1
-                if (name.isNotBlank()) onAdd(name, q, p, "Manual")
+                if (name.isNotBlank()) onAdd(name, q, p, "Manual", unit, category)
             }) { Text("Adicionar") }
         },
         dismissButton = {

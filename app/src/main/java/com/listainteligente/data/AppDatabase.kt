@@ -77,6 +77,11 @@ interface PriceHistoryDao {
     @Query("SELECT MIN(price) FROM price_history WHERE productName = :normalizedName")
     suspend fun getLowestPrice(normalizedName: String): Double?
 
+    /** Menor preço registrado ANTES de um instante — usado pra comparar a compra
+     *  atual sem contar os preços que acabaram de ser gravados nela mesma. */
+    @Query("SELECT MIN(price) FROM price_history WHERE productName = :normalizedName AND scannedAt < :beforeTimestamp")
+    suspend fun getLowestPriceBefore(normalizedName: String, beforeTimestamp: Long): Double?
+
     @Query("SELECT * FROM price_history WHERE productName = :normalizedName ORDER BY scannedAt DESC LIMIT 30")
     fun getHistoryForProduct(normalizedName: String): Flow<List<PriceHistoryEntry>>
 }
@@ -85,7 +90,7 @@ interface PriceHistoryDao {
 
 @Database(
     entities  = [ShoppingList::class, ShoppingItem::class, PriceHistoryEntry::class],
-    version   = 2,
+    version   = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

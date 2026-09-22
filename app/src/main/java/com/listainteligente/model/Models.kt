@@ -43,8 +43,28 @@ data class ShoppingList(
     val createdAt: Long = System.currentTimeMillis(),
     val budget: Double = 0.0,           // orçamento definido pelo usuário
     val store: String = "",
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val listType: String = ListTypes.MERCADO
 )
+
+/** Tipos de lista: influenciam ícone/cor na Home e pequenos ajustes de texto
+ *  na tela de detalhe (ex: Farmácia). Não adiciona lógica médica nenhuma —
+ *  é só organização de compras, como o resto do app. */
+object ListTypes {
+    const val MERCADO  = "Mercado"
+    const val FARMACIA = "Farmácia"
+    const val CASA     = "Casa"
+    const val OUTROS   = "Outros"
+
+    val all = listOf(MERCADO, FARMACIA, CASA, OUTROS)
+
+    fun emoji(type: String): String = when (type) {
+        MERCADO  -> "🛒"
+        FARMACIA -> "💊"
+        CASA     -> "🏠"
+        else     -> "📦"
+    }
+}
 
 // ─── Resultado do OCR da etiqueta ───────────────────────────────────────────
 

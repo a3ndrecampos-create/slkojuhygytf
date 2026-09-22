@@ -16,8 +16,8 @@ class ShoppingRepository @Inject constructor(
 
     fun getActiveLists()     = listDao.getActiveLists()
     fun getAllLists()         = listDao.getAllLists()
-    suspend fun createList(name: String, budget: Double = 0.0, store: String = "") =
-        listDao.insert(ShoppingList(name = name, budget = budget, store = store))
+    suspend fun createList(name: String, budget: Double = 0.0, store: String = "", listType: String = ListTypes.MERCADO) =
+        listDao.insert(ShoppingList(name = name, budget = budget, store = store, listType = listType))
     suspend fun updateList(list: ShoppingList) = listDao.update(list)
     suspend fun deleteList(list: ShoppingList) = listDao.delete(list)
     suspend fun getListById(id: Long)          = listDao.getById(id)
@@ -50,6 +50,11 @@ class ShoppingRepository @Inject constructor(
     /** Menor preço já visto pra esse produto, ANTES do preço atual (pra comparar). */
     suspend fun getLowestPrice(productName: String): Double? =
         priceHistoryDao.getLowestPrice(normalizeProductName(productName))
+
+    /** Menor preço registrado antes de um instante — usado no resumo da compra
+     *  pra não comparar o preço pago hoje com ele mesmo. */
+    suspend fun getLowestPriceBefore(productName: String, beforeTimestamp: Long): Double? =
+        priceHistoryDao.getLowestPriceBefore(normalizeProductName(productName), beforeTimestamp)
 
     // ── Resumo financeiro ────────────────────────────────────────────────────
 

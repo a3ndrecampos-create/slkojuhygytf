@@ -73,17 +73,24 @@ class ShoppingViewModel @Inject constructor(
 
     // ── Listas ───────────────────────────────────────────────────────────────
 
-    fun createList(name: String, budget: Double = 0.0, store: String = "") =
-        viewModelScope.launch { repo.createList(name, budget, store) }
+    fun createList(name: String, budget: Double = 0.0, store: String = "", listType: String = ListTypes.MERCADO) =
+        viewModelScope.launch { repo.createList(name, budget, store, listType) }
 
     fun deleteList(list: ShoppingList) =
         viewModelScope.launch { repo.deleteList(list) }
 
     /** Duplica a lista (útil pra compras recorrentes, tipo "Compras do mês"):
-     *  cria uma nova lista e copia os itens, todos desmarcados. */
-    fun duplicateList(list: ShoppingList) =
+     *  cria uma nova lista e copia os itens, todos desmarcados. A lista
+     *  original nunca é alterada. */
+    fun duplicateList(list: ShoppingList) = copyList(list, suffix = "(cópia)")
+
+    /** "Repetir lista" a partir da tela de detalhe: mesmo mecanismo de duplicar,
+     *  só muda o nome sugerido pra deixar claro que é uma nova rodada de compras. */
+    fun repeatList(list: ShoppingList) = copyList(list, suffix = "(nova)")
+
+    private fun copyList(list: ShoppingList, suffix: String) =
         viewModelScope.launch {
-            val newId = repo.createList("${list.name} (cópia)", list.budget, list.store)
+            val newId = repo.createList("${list.name} $suffix", list.budget, list.store, list.listType)
             val items = repo.getItems(list.id).first()
             items.forEach { item ->
                 repo.addItem(item.copy(id = 0, listId = newId, checked = false))
@@ -162,6 +169,23 @@ class ShoppingViewModel @Inject constructor(
 
     fun deleteChecked(listId: Long) =
         viewModelScope.launch { repo.deleteChecked(listId) }
+
+    /** Economia real da compra: soma, item a item, a diferença entre o preço pago
+     *  e o menor preço visto ANTES desta lista existir. Só considera itens que já
+     *  têm histórico anterior — nunca inventa comparação pra quem não tem. Retorna
+     *  null quando nenhum item comprado tem histórico suficiente. */
+    suspend fun computePurchaseSavings(items: List<ShoppingItem>, listCreatedAt: Long): Double? {
+        var totalSavings = 0.0
+        var hadHistory = false
+        items.filter { it.checked && it.selectedPrice > 0 }.forEach { item ->
+            val previousLowest = repo.getLowestPriceBefore(item.name, listCreatedAt)
+            if (previousLowest != null && previousLowest > 0) {
+                hadHistory = true
+                totalSavings += (previousLowest - item.selectedPrice) * item.quantity
+            }
+        }
+        return if (hadHistory) totalSavings else null
+    }
 
     // ── Cálculo local de resumo ──────────────────────────────────────────────
 

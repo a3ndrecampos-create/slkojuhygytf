@@ -1,9 +1,11 @@
 package com.listainteligente.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.listainteligente.model.ListProgress
+import com.listainteligente.model.ListTypes
 import com.listainteligente.model.ShoppingList
 import com.listainteligente.ui.theme.Green100
 import com.listainteligente.ui.theme.Green700
@@ -56,40 +59,47 @@ fun HomeScreen(
         }
     ) { padding ->
 
-        if (state.lists.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.PlaylistAdd, null,
-                        modifier = Modifier.size(80.dp),
-                        tint = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Nenhuma lista ainda", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Crie sua primeira lista de compras",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(24.dp))
-                    Button(onClick = { showCreateDialog = true }) {
-                        Text("Criar lista")
+        Column(Modifier.fillMaxSize().padding(padding)) {
+
+            if (state.lists.isNotEmpty()) {
+                DashboardSummaryRow(state)
+            }
+
+            if (state.lists.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.PlaylistAdd, null,
+                            modifier = Modifier.size(80.dp),
+                            tint = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Nenhuma lista ainda", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Crie sua primeira lista de compras",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(24.dp))
+                        Button(onClick = { showCreateDialog = true }) {
+                            Text("Criar lista")
+                        }
                     }
                 }
-            }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    start = 16.dp, end = 16.dp,
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = 100.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(state.lists, key = { it.id }) { list ->
-                    ShoppingListCard(
-                        list        = list,
-                        progress    = state.progressByList[list.id] ?: ListProgress(),
-                        onClick     = { onOpenList(list.id) },
-                        onDelete    = { vm.deleteList(list) },
-                        onDuplicate = { vm.duplicateList(list) }
-                    )
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp,
+                        top = 8.dp,
+                        bottom = 100.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(state.lists, key = { it.id }) { list ->
+                        ShoppingListCard(
+                            list        = list,
+                            progress    = state.progressByList[list.id] ?: ListProgress(),
+                            onClick     = { onOpenList(list.id) },
+                            onDelete    = { vm.deleteList(list) },
+                            onDuplicate = { vm.duplicateList(list) }
+                        )
+                    }
                 }
             }
         }
@@ -97,12 +107,62 @@ fun HomeScreen(
 
     if (showCreateDialog) {
         CreateListDialog(
-            onCreate  = { name, budget, store ->
-                vm.createList(name, budget, store)
+            onCreate  = { name, budget, store, listType ->
+                vm.createList(name, budget, store, listType)
                 showCreateDialog = false
             },
             onDismiss = { showCreateDialog = false }
         )
+    }
+}
+
+@Composable
+private fun DashboardSummaryRow(state: ListScreenState) {
+    val pendingItems = state.progressByList.values.sumOf { it.totalItems - it.checkedItems }
+    val totalEstimado = state.progressByList.values.sumOf { it.subtotal }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        DashboardStat(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Default.ListAlt,
+            value = "${state.lists.size}",
+            label = if (state.lists.size == 1) "lista ativa" else "listas ativas"
+        )
+        DashboardStat(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Default.ShoppingBasket,
+            value = "$pendingItems",
+            label = "itens p/ comprar"
+        )
+        DashboardStat(
+            modifier = Modifier.weight(1.3f),
+            icon = Icons.Default.Payments,
+            value = "R$ ${"%.0f".format(totalEstimado)}",
+            label = "total estimado"
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun DashboardStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, label: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 1.dp
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Icon(icon, null, tint = Green700, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
 
@@ -162,13 +222,15 @@ fun ShoppingListCard(
                             .background(Green100),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ShoppingCart, null, tint = Green700, modifier = Modifier.size(24.dp))
+                        Text(ListTypes.emoji(list.listType), fontSize = 20.sp)
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(list.name, style = MaterialTheme.typography.titleMedium)
                         Text(
                             buildString {
-                                if (list.store.isNotEmpty()) append("${list.store} · ")
+                                append(list.listType)
+                                if (list.store.isNotEmpty()) append(" · ${list.store}")
+                                append(" · ")
                                 append(fmt.format(Date(list.createdAt)))
                             },
                             fontSize = 12.sp,
@@ -218,20 +280,34 @@ fun ShoppingListCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateListDialog(
-    onCreate: (name: String, budget: Double, store: String) -> Unit,
+    onCreate: (name: String, budget: Double, store: String, listType: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var name   by remember { mutableStateOf("") }
-    var budget by remember { mutableStateOf("") }
-    var store  by remember { mutableStateOf("") }
+    var name     by remember { mutableStateOf("") }
+    var budget   by remember { mutableStateOf("") }
+    var store    by remember { mutableStateOf("") }
+    var listType by remember { mutableStateOf(ListTypes.MERCADO) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nova lista de compras") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ListTypes.all.forEach { type ->
+                        FilterChip(
+                            selected = listType == type,
+                            onClick  = { listType = type },
+                            label    = { Text("${ListTypes.emoji(type)} $type") }
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Nome da lista") },
@@ -240,7 +316,7 @@ fun CreateListDialog(
                 )
                 OutlinedTextField(
                     value = store, onValueChange = { store = it },
-                    label = { Text("Supermercado (opcional)") },
+                    label = { Text("Estabelecimento (opcional)") },
                     placeholder = { Text("Ex: Max Atacadista") },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -256,7 +332,7 @@ fun CreateListDialog(
             Button(onClick = {
                 if (name.isNotBlank()) {
                     val b = budget.replace(",", ".").toDoubleOrNull() ?: 0.0
-                    onCreate(name, b, store)
+                    onCreate(name, b, store, listType)
                 }
             }) { Text("Criar") }
         },
