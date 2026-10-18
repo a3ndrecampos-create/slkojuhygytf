@@ -4,7 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
@@ -20,7 +23,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ListaInteligenteTheme {
-                AppNavigation()
+                // rememberSaveable: girar a tela não repete a abertura
+                var showSplash by rememberSaveable { mutableStateOf(true) }
+                Crossfade(targetState = showSplash, animationSpec = tween(400), label = "splash") { splash ->
+                    if (splash) AppSplashScreen(onFinished = { showSplash = false })
+                    else AppNavigation()
+                }
             }
         }
     }

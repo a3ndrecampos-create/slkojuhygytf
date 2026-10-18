@@ -20,6 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -968,6 +972,21 @@ fun EmptyListHint(listType: String = ListTypes.MERCADO, onScan: () -> Unit, onAd
 
 private val itemUnits = listOf("un", "cx", "pct", "kg", "g", "L", "ml")
 
+private fun categoryEmoji(category: String): String = when (category) {
+    "Hortifruti" -> "🥬"
+    "Carnes"     -> "🥩"
+    "Laticínios" -> "🧀"
+    "Padaria"    -> "🍞"
+    "Bebidas"    -> "🥤"
+    "Limpeza"    -> "🧼"
+    "Higiene"    -> "🧴"
+    "Mercearia"  -> "🛒"
+    "Frios"      -> "🥓"
+    "Congelados" -> "🧊"
+    else         -> "📦"
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddItemDialog(
     listId: Long,
@@ -975,65 +994,166 @@ fun AddItemDialog(
     onDismiss: () -> Unit
 ) {
     var name     by remember { mutableStateOf("") }
-    var qty      by remember { mutableStateOf("1") }
+    var qty      by remember { mutableStateOf(1) }
     var price    by remember { mutableStateOf("") }
     var unit     by remember { mutableStateOf("un") }
     var category by remember { mutableStateOf("Outros") }
+    val focus = remember { FocusRequester() }
 
-    AlertDialog(
+    val priceValue = price.parseMoney() ?: 0.0
+    val canAdd = name.isNotBlank()
+
+    val chipColors = FilterChipDefaults.filterChipColors(
+        selectedContainerColor = Green100,
+        selectedLabelColor = Green900,
+        selectedLeadingIconColor = Green700
+    )
+
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Adicionar item") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedTextField(
-                    value = name, onValueChange = { name = it },
-                    label = { Text("Nome do produto") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = qty, onValueChange = { qty = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Qtd") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = price, onValueChange = { price = it },
-                        label = { Text("Preço R$ (opcional)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(2f)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            // Cabeçalho
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Green100),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.AddShoppingCart, null, tint = Green700)
+                }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Novo item", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Preencha o básico, o resto você ajusta depois",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
 
-                Text("Unidade", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(itemUnits) { u ->
-                        FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u) })
+            // Nome
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Produto") },
+                placeholder = { Text("Ex: Arroz 5kg") },
+                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Next
+                ),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus)
+            )
+
+            // Quantidade + preço
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("Quantidade", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(onClick = { if (qty > 1) qty-- }) { Icon(Icons.Default.Remove, "Diminuir") }
+                        Text("$qty", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        IconButton(onClick = { qty++ }) { Icon(Icons.Default.Add, "Aumentar") }
                     }
                 }
+                Column(Modifier.weight(1f)) {
+                    Text("Preço unitário", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = price,
+                        onValueChange = { price = it },
+                        placeholder = { Text("0,00") },
+                        prefix = { Text("R$ ") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
 
-                Text("Categoria", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(Categories.all) { c ->
-                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) })
+            // Unidade
+            Column {
+                Text("Unidade", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemUnits.forEach { u ->
+                        FilterChip(
+                            selected = unit == u,
+                            onClick = { unit = u },
+                            label = { Text(u) },
+                            colors = chipColors
+                        )
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = {
-                val p = price.parseMoney() ?: 0.0
-                val q = (qty.toIntOrNull() ?: 1).coerceAtLeast(1)
-                if (name.isNotBlank()) onAdd(name.trim(), q, p, "Manual", unit, category)
-            }) { Text("Adicionar") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
+
+            // Categoria
+            Column {
+                Text("Categoria", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Categories.all.forEach { c ->
+                        FilterChip(
+                            selected = category == c,
+                            onClick = { category = c },
+                            label = { Text("${categoryEmoji(c)} $c") },
+                            colors = chipColors
+                        )
+                    }
+                }
+            }
+
+            // Prévia do total
+            if (priceValue > 0) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Green100)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Total do item", fontWeight = FontWeight.Medium, color = Green900)
+                    Text((priceValue * qty).brl(), fontWeight = FontWeight.Bold, color = Green700)
+                }
+            }
+
+            Button(
+                enabled = canAdd,
+                onClick = { onAdd(name.trim(), qty, priceValue, "Manual", unit, category) },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp)
+            ) {
+                Icon(Icons.Default.Check, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Adicionar à lista", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
         }
-    )
+    }
 }
