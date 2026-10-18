@@ -1,11 +1,13 @@
 package com.listainteligente.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -19,6 +21,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -347,56 +353,145 @@ fun CreateListDialog(
     var budget   by remember { mutableStateOf("") }
     var store    by remember { mutableStateOf("") }
     var listType by remember { mutableStateOf(ListTypes.MERCADO) }
+    val focus = remember { FocusRequester() }
 
-    AlertDialog(
+    val budgetValue = budget.parseMoney() ?: 0.0
+    val suggestions = listOf(100, 200, 300, 500, 1000)
+
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Nova lista de compras") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            // Cabeçalho
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Green100),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Icon(Icons.Default.PlaylistAdd, null, tint = Green700)
+                }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Nova lista", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Dê um nome e escolha o tipo de compra",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Nome
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nome da lista") },
+                placeholder = { Text("Ex: Compras do mês") },
+                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Next
+                ),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus)
+            )
+
+            // Tipo da lista
+            Column {
+                Text("Tipo", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ListTypes.all.forEach { type ->
-                        FilterChip(
-                            selected = listType == type,
-                            onClick  = { listType = type },
-                            label    = { Text("${ListTypes.emoji(type)} $type") }
-                        )
+                        val selected = listType == type
+                        val (bg, fg) = typeTint(type)
+                        Surface(
+                            onClick = { listType = type },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (selected) bg else MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (selected) BorderStroke(2.dp, fg) else null,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                Modifier.padding(vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(ListTypes.emoji(type), fontSize = 24.sp)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    type, fontSize = 12.sp, maxLines = 1,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) fg else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                 }
+            }
+
+            // Estabelecimento
+            OutlinedTextField(
+                value = store,
+                onValueChange = { store = it },
+                label = { Text("Estabelecimento (opcional)") },
+                placeholder = { Text("Ex: Max Atacadista") },
+                leadingIcon = { Icon(Icons.Default.Store, null) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
+                    imeAction = ImeAction.Next
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Orçamento
+            Column {
                 OutlinedTextField(
-                    value = name, onValueChange = { name = it },
-                    label = { Text("Nome da lista") },
-                    placeholder = { Text("Ex: Compras do mês") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = store, onValueChange = { store = it },
-                    label = { Text("Estabelecimento (opcional)") },
-                    placeholder = { Text("Ex: Max Atacadista") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = budget, onValueChange = { budget = it },
-                    label = { Text("Orçamento R$ (opcional)") },
-                    placeholder = { Text("Ex: 500,00") },
+                    value = budget,
+                    onValueChange = { budget = it },
+                    label = { Text("Orçamento (opcional)") },
+                    placeholder = { Text("0,00") },
+                    prefix = { Text("R$ ") },
+                    leadingIcon = { Icon(Icons.Default.Savings, null) },
                     supportingText = { Text("Pode deixar em branco e definir depois, dentro da lista.") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = RoundedCornerShape(16.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth()
                 )
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (name.isNotBlank()) {
-                    onCreate(name.trim(), budget.parseMoney() ?: 0.0, store.trim(), listType)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    suggestions.forEach { v ->
+                        SuggestionChip(onClick = { budget = "$v" }, label = { Text("R$ $v") })
+                    }
                 }
-            }) { Text("Criar") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
+            }
+
+            Button(
+                enabled = name.isNotBlank(),
+                onClick = { onCreate(name.trim(), budgetValue, store.trim(), listType) },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp)
+            ) {
+                Icon(Icons.Default.Check, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Criar lista", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
         }
-    )
+    }
 }
