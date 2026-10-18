@@ -7,6 +7,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.listainteligente.model.ScannedLabel
@@ -95,7 +96,8 @@ class CameraService(private val context: Context) {
             .addOnSuccessListener { visionText ->
                 val raw = visionText.text
                 if (isPriceLabel(raw)) {
-                    val label = LabelParser.parse(raw)
+                    val highlighted = findHighlightedPrice(visionText)
+                    val label = LabelParser.parse(raw, highlighted)
                     if (label.priceOptions.isNotEmpty()) {
                         onResult(ScanEvent.Detected(label))
                     } else {
@@ -112,6 +114,59 @@ class CameraService(private val context: Context) {
                 onResult(ScanEvent.Error(e.message ?: "Erro ao processar imagem"))
             }
             .addOnCompleteListener { imageProxy.close() }
+    }
+
+    /** Preço candidato lido da etiqueta + altura do texto na imagem (proxy do tamanho da fonte). */
+    private data class PriceCandidate(val value: Double, val height: Int)
+
+    /**
+     * Acha o preço em MAIOR DESTAQUE da etiqueta: entre todos os números que parecem
+     * preço, pega o de texto mais alto (maior fonte). Se dois forem praticamente do
+     * mesmo tamanho (diferença < 10%), fica com o de maior valor.
+     *
+     * Cobre dois jeitos de o OCR ler o preço:
+     *  - inteiro: "12,99" / "R$12,99" / "12.99" num elemento só;
+     *  - separado: "12" grande + "99" pequeno ao lado/acima (centavos em sobrescrito).
+     */
+    private fun findHighlightedPrice(visionText: Text): Double? {
+        val elements = visionText.textBlocks.flatMap { block -> block.lines.flatMap { it.elements } }
+        val candidates = mutableListOf<PriceCandidate>()
+
+        val whole = Regex("""^(?:R\$)?(\d{1,4})[,.](\d{2})$""")
+        for (el in elements) {
+            val box = el.boundingBox ?: continue
+            val clean = el.text.uppercase().replace(" ", "")
+            val m = whole.find(clean) ?: continue
+            val value = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull() ?: continue
+            if (value in 0.50..9999.0) candidates.add(PriceCandidate(value, box.height()))
+        }
+
+        // Preço "quebrado": inteiro grande + centavos pequenos logo à direita, na metade de cima.
+        val intRegex   = Regex("""^\d{1,4}$""")
+        val centsRegex = Regex("""^\d{2}$""")
+        val ints  = elements.filter { intRegex.matches(it.text.trim()) && it.boundingBox != null }
+        val cents = elements.filter { centsRegex.matches(it.text.trim()) && it.boundingBox != null }
+        for (i in ints) {
+            val ib = i.boundingBox ?: continue
+            for (c in cents) {
+                if (c === i) continue
+                val cb = c.boundingBox ?: continue
+                val isNear    = cb.left >= ib.right - ib.width() * 0.2f &&
+                                cb.left - ib.right <= ib.height() * 0.8f
+                val isSmaller = cb.height() < ib.height() * 0.8f
+                val isUpper   = cb.centerY() <= ib.centerY()
+                if (isNear && isSmaller && isUpper) {
+                    val value = "${i.text.trim()}.${c.text.trim()}".toDoubleOrNull() ?: continue
+                    if (value in 0.50..9999.0) candidates.add(PriceCandidate(value, ib.height()))
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) return null
+        val maxHeight = candidates.maxOf { it.height }
+        return candidates
+            .filter { it.height >= maxHeight * 0.9f }
+            .maxOf { it.value }
     }
 
     /**

@@ -27,6 +27,10 @@ interface ShoppingListDao {
 
     @Query("SELECT * FROM shopping_lists WHERE id = :id")
     suspend fun getById(id: Long): ShoppingList?
+
+    /** Observa a lista (nome, orçamento, loja…) — assim mudar o orçamento atualiza a tela na hora. */
+    @Query("SELECT * FROM shopping_lists WHERE id = :id")
+    fun observeById(id: Long): Flow<ShoppingList?>
 }
 
 @Dao

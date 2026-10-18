@@ -21,6 +21,7 @@ class ShoppingRepository @Inject constructor(
     suspend fun updateList(list: ShoppingList) = listDao.update(list)
     suspend fun deleteList(list: ShoppingList) = listDao.delete(list)
     suspend fun getListById(id: Long)          = listDao.getById(id)
+    fun observeList(id: Long)                  = listDao.observeById(id)
 
     // ── Itens ────────────────────────────────────────────────────────────────
 

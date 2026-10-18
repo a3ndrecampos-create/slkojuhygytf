@@ -55,7 +55,7 @@ class ShoppingViewModel @Inject constructor(
         .filterNotNull()
         .flatMapLatest { listId ->
             combine(
-                flow { emit(repo.getListById(listId)) },
+                repo.observeList(listId),
                 repo.getItems(listId)
             ) { list, items ->
                 val budget = list?.budget ?: 0.0
@@ -155,10 +155,22 @@ class ShoppingViewModel @Inject constructor(
             if (price > 0) repo.recordPrice(newName, price, priceLabel)
         }
 
+    /** Nunca apaga o item: quantidade mínima é 1. Excluir é uma ação separada, com confirmação. */
     fun updateItemQty(item: ShoppingItem, qty: Int) =
         viewModelScope.launch {
-            if (qty <= 0) repo.deleteItem(item)
-            else repo.updateItem(item.copy(quantity = qty))
+            repo.updateItem(item.copy(quantity = qty.coerceAtLeast(1)))
+        }
+
+    /** Preço digitado à mão: grava preço/quantidade, marca como no carrinho e guarda no histórico. */
+    fun setManualPriceAndCheck(item: ShoppingItem, qty: Int, price: Double) =
+        viewModelScope.launch {
+            repo.updateItem(item.copy(
+                quantity           = qty.coerceAtLeast(1),
+                selectedPrice      = price,
+                selectedPriceLabel = "Manual",
+                checked            = true
+            ))
+            if (price > 0) repo.recordPrice(item.name, price, "Manual")
         }
 
     fun toggleChecked(item: ShoppingItem) =

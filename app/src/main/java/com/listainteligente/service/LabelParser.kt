@@ -2,6 +2,7 @@ package com.listainteligente.service
 
 import com.listainteligente.model.PriceOption
 import com.listainteligente.model.ScannedLabel
+import kotlin.math.abs
 
 /**
  * Interpreta o texto bruto do ML Kit OCR e extrai
@@ -12,19 +13,28 @@ import com.listainteligente.model.ScannedLabel
  */
 object LabelParser {
 
-    fun parse(rawText: String): ScannedLabel {
+    /**
+     * [highlightedPrice]: preço em maior destaque visual, detectado pelo tamanho do texto
+     * (ver CameraService). Se ele não bater com nenhuma opção lida, entra como opção "Destaque".
+     */
+    fun parse(rawText: String, highlightedPrice: Double? = null): ScannedLabel {
         val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val text  = rawText.uppercase()
 
         val productName = extractProductName(lines)
         val ean         = extractEan(text)
-        val prices      = extractPrices(lines, text)
+        val parsed      = extractPrices(lines, text)
+
+        val prices = if (highlightedPrice != null && parsed.none { abs(it.price - highlightedPrice) < 0.005 })
+            listOf(PriceOption(label = "Destaque", price = highlightedPrice)) + parsed
+        else parsed
 
         return ScannedLabel(
-            productName  = productName,
-            ean          = ean,
-            priceOptions = prices,
-            rawText      = rawText
+            productName      = productName,
+            ean              = ean,
+            priceOptions     = prices,
+            rawText          = rawText,
+            highlightedPrice = highlightedPrice
         )
     }
 

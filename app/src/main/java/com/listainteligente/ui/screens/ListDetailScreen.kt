@@ -5,7 +5,9 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,15 +15,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.listainteligente.model.*
+import com.listainteligente.ui.asInput
+import com.listainteligente.ui.brl
+import com.listainteligente.ui.parseMoney
 import com.listainteligente.ui.theme.*
+
+enum class ItemFilter { TODOS, PENDENTES, COMPRADOS }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -34,13 +45,20 @@ fun ListDetailScreen(
 ) {
     LaunchedEffect(listId) { vm.selectList(listId) }
     val state by vm.detailState.collectAsState()
+    val context = LocalContext.current
+
     var showAddDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showBudgetDialog by remember { mutableStateOf(false) }
     var showCompletionDialog by remember { mutableStateOf(false) }
     var purchaseSavings by remember { mutableStateOf<Double?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var itemFilter by remember { mutableStateOf(ItemFilter.TODOS) }
-    val context = LocalContext.current
+
+    // Itens em ação: exclusão (sempre com confirmação), escolha do jeito de informar o preço, preço manual
+    var itemToDelete by remember { mutableStateOf<ShoppingItem?>(null) }
+    var itemForPriceMethod by remember { mutableStateOf<ShoppingItem?>(null) }
+    var itemForManualPrice by remember { mutableStateOf<ShoppingItem?>(null) }
 
     val isComplete = state.summary.totalItems > 0 && state.summary.checkedItems == state.summary.totalItems
 
@@ -55,21 +73,17 @@ fun ListDetailScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(state.list?.name ?: "Lista", fontWeight = FontWeight.Bold)
+                        Text(state.list?.name ?: "Lista", fontWeight = FontWeight.Bold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         state.list?.store?.takeIf { it.isNotEmpty() }?.let {
                             Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Voltar") }
                 },
                 actions = {
-                    if (isComplete) {
-                        IconButton(onClick = { showCompletionDialog = true }) {
-                            Icon(Icons.Default.TaskAlt, null, tint = Green700)
-                        }
-                    }
                     IconButton(onClick = {
                         val text = buildShareText(state.list, state.items)
                         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -78,13 +92,21 @@ fun ListDetailScreen(
                         }
                         context.startActivity(Intent.createChooser(intent, "Compartilhar lista"))
                     }) {
-                        Icon(Icons.Default.Share, null)
+                        Icon(Icons.Default.Share, "Compartilhar")
                     }
                     Box {
                         IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, null)
+                            Icon(Icons.Default.MoreVert, "Mais opções")
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if ((state.list?.budget ?: 0.0) > 0) "Alterar orçamento" else "Definir orçamento") },
+                                leadingIcon = { Icon(Icons.Default.Savings, null) },
+                                onClick = {
+                                    showMenu = false
+                                    showBudgetDialog = true
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Repetir lista") },
                                 leadingIcon = { Icon(Icons.Default.Replay, null) },
@@ -111,81 +133,109 @@ fun ListDetailScreen(
             )
         },
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // FAB: escanear etiqueta
-                FloatingActionButton(
-                    onClick = onScan,
-                    containerColor = MaterialTheme.colorScheme.secondary
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SmallFloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Icon(Icons.Default.QrCodeScanner, null, tint = Color.White)
+                    Icon(Icons.Default.Add, "Adicionar item")
                 }
-                // FAB: adicionar manual
-                FloatingActionButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Default.Add, null)
-                }
+                ExtendedFloatingActionButton(
+                    onClick = onScan,
+                    icon = { Icon(Icons.Default.QrCodeScanner, null) },
+                    text = { Text("Escanear etiqueta") },
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
             }
         }
     ) { padding ->
 
-        Column(Modifier.fillMaxSize().padding(padding)) {
-
-            // ── Totalizador fixo no topo ────────────────────────────────────
-            BudgetSummaryBar(summary = state.summary)
-
-            // ── Lista de itens por categoria ────────────────────────────────
-            if (state.items.isEmpty()) {
+        if (state.items.isEmpty()) {
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                SummaryHero(
+                    summary = state.summary,
+                    isComplete = false,
+                    onEditBudget = { showBudgetDialog = true },
+                    onFinish = {}
+                )
                 EmptyListHint(
                     listType = state.list?.listType ?: ListTypes.MERCADO,
                     onScan = onScan,
                     onAdd = { showAddDialog = true }
                 )
-            } else {
-                SearchAndFilterBar(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    filter = itemFilter,
-                    onFilterChange = { itemFilter = it }
-                )
-
-                val filteredItems = state.items.filter { item ->
-                    val matchesQuery = searchQuery.isBlank() ||
-                        item.name.contains(searchQuery, ignoreCase = true)
-                    val matchesFilter = when (itemFilter) {
-                        ItemFilter.TODOS      -> true
-                        ItemFilter.PENDENTES  -> !item.checked
-                        ItemFilter.COMPRADOS  -> item.checked
-                    }
-                    matchesQuery && matchesFilter
+            }
+        } else {
+            val filteredItems = state.items.filter { item ->
+                val matchesQuery = searchQuery.isBlank() ||
+                    item.name.contains(searchQuery, ignoreCase = true)
+                val matchesFilter = when (itemFilter) {
+                    ItemFilter.TODOS     -> true
+                    ItemFilter.PENDENTES -> !item.checked
+                    ItemFilter.COMPRADOS -> item.checked
                 }
-                val grouped = filteredItems.groupBy { it.category }
+                matchesQuery && matchesFilter
+            }
+            // Dentro de cada categoria, o que ainda falta comprar vem primeiro
+            val grouped = filteredItems
+                .groupBy { it.category }
+                .mapValues { (_, list) -> list.sortedBy { it.checked } }
+
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = 180.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.fillMaxSize().padding(padding)
+            ) {
+                item(key = "hero") {
+                    SummaryHero(
+                        summary = state.summary,
+                        isComplete = isComplete,
+                        onEditBudget = { showBudgetDialog = true },
+                        onFinish = { showCompletionDialog = true }
+                    )
+                }
+                item(key = "filters") {
+                    SearchAndFilterBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        filter = itemFilter,
+                        onFilterChange = { itemFilter = it },
+                        pendingCount = state.summary.totalItems - state.summary.checkedItems,
+                        boughtCount = state.summary.checkedItems,
+                        totalCount = state.summary.totalItems
+                    )
+                }
 
                 if (filteredItems.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            "Nenhum item encontrado",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    item(key = "empty") {
+                        Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                            Text("Nenhum item encontrado", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 } else {
-                    LazyColumn(
-                        contentPadding = PaddingValues(bottom = 140.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        grouped.forEach { (category, items) ->
-                            stickyHeader {
-                                CategoryHeader(category)
-                            }
-                            items(items, key = { it.id }) { item ->
-                                ShoppingItemRow(
-                                    item        = item,
-                                    onScanPrice = { onScanItem(item.id) },
-                                    onUncheck   = { vm.toggleChecked(item) },
-                                    onDelete    = { vm.deleteItem(item) },
-                                    onQtyUp     = { vm.updateItemQty(item, item.quantity + 1) },
-                                    onQtyDown   = { vm.updateItemQty(item, item.quantity - 1) }
-                                )
-                            }
+                    grouped.forEach { (category, categoryItems) ->
+                        stickyHeader(key = "cat-$category") {
+                            CategoryHeader(category)
+                        }
+                        items(categoryItems, key = { it.id }) { item ->
+                            ShoppingItemRow(
+                                item        = item,
+                                modifier    = Modifier.animateItemPlacement(),
+                                // Marcar: abre a escolha entre câmera e preço manual.
+                                // Desmarcar: só desmarca.
+                                onCheckClick = {
+                                    if (item.checked) vm.toggleChecked(item)
+                                    else itemForPriceMethod = item
+                                },
+                                onRequestDelete = { itemToDelete = item },
+                                onQtyUp     = { vm.updateItemQty(item, item.quantity + 1) },
+                                onQtyDown   = {
+                                    // Em 1 unidade, "−" pergunta se quer excluir (nunca apaga sozinho)
+                                    if (item.quantity <= 1) itemToDelete = item
+                                    else vm.updateItemQty(item, item.quantity - 1)
+                                }
+                            )
                         }
                     }
                 }
@@ -193,7 +243,57 @@ fun ListDetailScreen(
         }
     }
 
-    // Dialog de adição manual
+    // ── Diálogos e sheets ────────────────────────────────────────────────────
+
+    itemToDelete?.let { item ->
+        ConfirmDeleteDialog(
+            title = "Excluir item?",
+            message = "\"${item.name}\" será removido desta lista.",
+            onConfirm = {
+                vm.deleteItem(item)
+                itemToDelete = null
+            },
+            onDismiss = { itemToDelete = null }
+        )
+    }
+
+    itemForPriceMethod?.let { item ->
+        PriceMethodSheet(
+            item = item,
+            onCamera = {
+                itemForPriceMethod = null
+                onScanItem(item.id)
+            },
+            onManual = {
+                itemForPriceMethod = null
+                itemForManualPrice = item
+            },
+            onDismiss = { itemForPriceMethod = null }
+        )
+    }
+
+    itemForManualPrice?.let { item ->
+        ManualPriceDialog(
+            item = item,
+            onConfirm = { qty, price ->
+                vm.setManualPriceAndCheck(item, qty, price)
+                itemForManualPrice = null
+            },
+            onDismiss = { itemForManualPrice = null }
+        )
+    }
+
+    if (showBudgetDialog) {
+        BudgetDialog(
+            current = state.list?.budget ?: 0.0,
+            onSave = { value ->
+                state.list?.let { vm.updateListBudget(it, value) }
+                showBudgetDialog = false
+            },
+            onDismiss = { showBudgetDialog = false }
+        )
+    }
+
     if (showAddDialog) {
         AddItemDialog(
             listId  = listId,
@@ -205,7 +305,6 @@ fun ListDetailScreen(
         )
     }
 
-    // Resumo ao finalizar a compra
     if (showCompletionDialog) {
         PurchaseCompletionDialog(
             summary  = state.summary,
@@ -215,16 +314,123 @@ fun ListDetailScreen(
     }
 }
 
-enum class ItemFilter { TODOS, PENDENTES, COMPRADOS }
+// ── Resumo no topo (total, orçamento, progresso) ─────────────────────────────
+
+@Composable
+fun SummaryHero(
+    summary: ListSummary,
+    isComplete: Boolean,
+    onEditBudget: () -> Unit,
+    onFinish: () -> Unit
+) {
+    val over = summary.isOverBudget
+    val nearLimit = summary.progressPercent > 0.85f
+    val gradient = when {
+        over      -> listOf(Red700, Orange700)
+        nearLimit -> listOf(Orange700, Orange500)
+        else      -> listOf(Green900, Green500)
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(gradient))
+            .padding(20.dp)
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ShoppingCart, null, tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Total da compra", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${summary.checkedItems} de ${summary.totalItems} no carrinho",
+                    color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                summary.subtotal.brl(),
+                color = Color.White,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (summary.budget > 0) {
+                LinearProgressIndicator(
+                    progress   = { summary.progressPercent },
+                    modifier   = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color      = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.28f)
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onEditBudget),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (over) "${(summary.subtotal - summary.budget).brl()} acima do orçamento"
+                        else "Ainda pode gastar ${summary.remaining.brl()}",
+                        color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("de ${summary.budget.brl()}", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.Edit, "Alterar orçamento", tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(14.dp))
+                }
+            } else {
+                // Sem orçamento ainda: convite claro pra definir agora (não precisa ser na criação)
+                Surface(
+                    onClick = onEditBudget,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.20f)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Savings, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Definir orçamento", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            if (isComplete) {
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onFinish,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Green900)
+                ) {
+                    Icon(Icons.Default.TaskAlt, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Ver resumo da compra")
+                }
+            }
+        }
+    }
+}
+
+// ── Busca e filtros (com contagem) ───────────────────────────────────────────
 
 @Composable
 private fun SearchAndFilterBar(
     query: String,
     onQueryChange: (String) -> Unit,
     filter: ItemFilter,
-    onFilterChange: (ItemFilter) -> Unit
+    onFilterChange: (ItemFilter) -> Unit,
+    pendingCount: Int,
+    boughtCount: Int,
+    totalCount: Int
 ) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -233,25 +439,435 @@ private fun SearchAndFilterBar(
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Close, null)
+                        Icon(Icons.Default.Close, "Limpar busca")
                     }
                 }
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().height(52.dp)
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = filter == ItemFilter.TODOS, onClick = { onFilterChange(ItemFilter.TODOS) },
-                label = { Text("Todos") })
+                label = { Text("Todos ($totalCount)") })
             FilterChip(selected = filter == ItemFilter.PENDENTES, onClick = { onFilterChange(ItemFilter.PENDENTES) },
-                label = { Text("Pendentes") })
+                label = { Text("Falta ($pendingCount)") })
             FilterChip(selected = filter == ItemFilter.COMPRADOS, onClick = { onFilterChange(ItemFilter.COMPRADOS) },
-                label = { Text("Comprados") })
+                label = { Text("No carrinho ($boughtCount)") })
         }
     }
 }
+
+// ── Cabeçalho de categoria ───────────────────────────────────────────────────
+
+@Composable
+fun CategoryHeader(category: String) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(width = 4.dp, height = 16.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Green700)
+            )
+            Text(
+                category.uppercase(),
+                fontWeight = FontWeight.Bold,
+                fontSize   = 12.sp,
+                letterSpacing = 0.8.sp,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier   = Modifier.padding(start = 8.dp)
+            )
+        }
+    }
+}
+
+// ── Cartão de item ───────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShoppingItemRow(
+    item: ShoppingItem,
+    onCheckClick: () -> Unit,
+    onRequestDelete: () -> Unit,
+    onQtyUp: () -> Unit,
+    onQtyDown: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val textDecoration = if (item.checked) TextDecoration.LineThrough else TextDecoration.None
+    val textColor = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface
+
+    // Deslizar NUNCA exclui direto: pede confirmação e o cartão volta pro lugar.
+    // rememberUpdatedState garante que o callback usado é sempre o mais recente.
+    val currentRequestDelete by rememberUpdatedState(onRequestDelete)
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) currentRequestDelete()
+            false
+        },
+        positionalThreshold = { totalDistance -> totalDistance * 0.35f }
+    )
+
+    Box(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            backgroundContent = {
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 22.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Excluir", color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape    = RoundedCornerShape(18.dp),
+                color    = if (item.checked) MaterialTheme.colorScheme.surfaceVariant
+                           else MaterialTheme.colorScheme.surface,
+                shadowElevation = if (item.checked) 0.dp else 2.dp
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+
+                    // Linha de cima: caixa de seleção grande + nome + lixeira
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(if (item.checked) Green700 else Color.Transparent)
+                                .border(
+                                    width = if (item.checked) 0.dp else 2.dp,
+                                    color = if (item.checked) Color.Transparent else MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape
+                                )
+                                .clickable(onClick = onCheckClick),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (item.checked) {
+                                Icon(Icons.Default.Check, "Desmarcar", tint = Color.White,
+                                    modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clickable(onClick = onCheckClick)
+                                .padding(horizontal = 12.dp)
+                        ) {
+                            Text(
+                                item.name,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                                textDecoration = textDecoration,
+                                color = textColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                if (item.selectedPrice > 0)
+                                    "${item.selectedPrice.brl()} cada · ${item.selectedPriceLabel}"
+                                else
+                                    "Toque no círculo pra informar o preço",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = onRequestDelete, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.DeleteOutline, "Excluir item",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Linha de baixo: quantidade (esquerda) e total do item (direita)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        QtyStepper(
+                            quantity = item.quantity,
+                            unit = item.unit,
+                            onUp = onQtyUp,
+                            onDown = onQtyDown
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (item.selectedPrice > 0) {
+                            Text(
+                                item.totalPrice.brl(),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp,
+                                color = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant else Green700
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QtyStepper(quantity: Int, unit: String, onUp: () -> Unit, onDown: () -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        StepButton(Icons.Default.Remove, "Diminuir", onDown)
+        Text(
+            "$quantity $unit",
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
+        StepButton(Icons.Default.Add, "Aumentar", onUp)
+    }
+}
+
+@Composable
+private fun StepButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, description, modifier = Modifier.size(18.dp))
+    }
+}
+
+// ── Confirmação de exclusão (usada em itens e listas) ───────────────────────
+
+@Composable
+fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon  = { Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text(title) },
+        text  = { Text(message) },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) { Text("Excluir") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Como informar o preço: câmera ou digitado ───────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PriceMethodSheet(
+    item: ShoppingItem,
+    onCamera: () -> Unit,
+    onManual: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column {
+                Text("Qual é o preço?", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    item.name,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            MethodOption(
+                icon = Icons.Default.CameraAlt,
+                title = "Ler pela câmera",
+                subtitle = "Aponte pra etiqueta — pego o preço em destaque",
+                container = MaterialTheme.colorScheme.primaryContainer,
+                onClick = onCamera
+            )
+            MethodOption(
+                icon = Icons.Default.Keyboard,
+                title = "Digitar o preço",
+                subtitle = "Informe o valor e a quantidade na mão",
+                container = MaterialTheme.colorScheme.surfaceVariant,
+                onClick = onManual
+            )
+        }
+    }
+}
+
+@Composable
+private fun MethodOption(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    container: Color,
+    onClick: () -> Unit
+) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = container) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = Green700)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+// ── Preço digitado ───────────────────────────────────────────────────────────
+
+@Composable
+private fun ManualPriceDialog(
+    item: ShoppingItem,
+    onConfirm: (qty: Int, price: Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var price by remember { mutableStateOf(if (item.selectedPrice > 0) item.selectedPrice.asInput() else "") }
+    var qty   by remember { mutableStateOf(item.quantity.toString()) }
+
+    val priceValue = price.parseMoney()
+    val qtyValue   = qty.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val valid      = priceValue != null && priceValue > 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { price = it },
+                    label = { Text("Preço de cada unidade") },
+                    prefix = { Text("R$ ") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = qty,
+                    onValueChange = { qty = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Quantidade (${item.unit})") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (valid) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Green100)
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Total do item", fontWeight = FontWeight.Medium, color = Green900)
+                        Text((priceValue!! * qtyValue).brl(), fontWeight = FontWeight.Bold, color = Green700)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = valid,
+                onClick = { priceValue?.let { onConfirm(qtyValue, it) } }
+            ) { Text("Colocar no carrinho") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Orçamento (pode ser definido depois de criar a lista) ───────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BudgetDialog(
+    current: Double,
+    onSave: (Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(if (current > 0) current.asInput() else "") }
+    val value = text.parseMoney()
+    val suggestions = listOf(100, 200, 300, 500, 1000)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon  = { Icon(Icons.Default.Savings, null, tint = Green700) },
+        title = { Text("Orçamento da lista") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Quanto você quer gastar? Dá pra mudar quando quiser.",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Valor") },
+                    prefix = { Text("R$ ") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(suggestions) { s ->
+                        SuggestionChip(onClick = { text = "$s" }, label = { Text("R$ $s") })
+                    }
+                }
+                if (current > 0) {
+                    TextButton(onClick = { onSave(0.0) }) {
+                        Text("Remover orçamento", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = value != null && value > 0,
+                onClick = { value?.let(onSave) }
+            ) { Text("Salvar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Resumo ao finalizar ──────────────────────────────────────────────────────
 
 @Composable
 fun PurchaseCompletionDialog(summary: ListSummary, savings: Double?, onDismiss: () -> Unit) {
@@ -264,10 +880,7 @@ fun PurchaseCompletionDialog(summary: ListSummary, savings: Double?, onDismiss: 
                 Text("${summary.totalItems} produtos · ${summary.checkedItems} encontrados",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    "R$ ${"%.2f".format(summary.subtotal).replace(".", ",")}",
-                    style = MaterialTheme.typography.headlineSmall
-                )
+                Text(summary.subtotal.brl(), style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(10.dp))
                 when {
                     savings == null -> Text(
@@ -275,11 +888,11 @@ fun PurchaseCompletionDialog(summary: ListSummary, savings: Double?, onDismiss: 
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     savings > 0.009 -> Text(
-                        "Você economizou R$ ${"%.2f".format(savings).replace(".", ",")} comparado ao menor preço visto antes desta lista.",
+                        "Você economizou ${savings.brl()} comparado ao menor preço visto antes desta lista.",
                         color = Green700, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
                     )
                     savings < -0.009 -> Text(
-                        "Pagou R$ ${"%.2f".format(-savings).replace(".", ",")} a mais do que o menor preço já visto antes.",
+                        "Pagou ${(-savings).brl()} a mais do que o menor preço já visto antes.",
                         color = Orange700, fontSize = 13.sp
                     )
                     else -> Text(
@@ -305,275 +918,24 @@ private fun buildShareText(list: ShoppingList?, items: List<ShoppingItem>): Stri
         sb.appendLine("• $category")
         categoryItems.forEach { item ->
             val mark = if (item.checked) "✅" else "⬜"
-            val priceInfo = if (item.selectedPrice > 0)
-                " — R$ ${"%.2f".format(item.totalPrice).replace(".", ",")}" else ""
+            val priceInfo = if (item.selectedPrice > 0) " — ${item.totalPrice.brl()}" else ""
             sb.appendLine("  $mark ${item.name} (${item.quantity}x)$priceInfo")
         }
         sb.appendLine()
     }
 
-    val total = items.sumOf { it.totalPrice }
-    sb.appendLine("Total: R$ ${"%.2f".format(total).replace(".", ",")}")
+    sb.appendLine("Total: ${items.sumOf { it.totalPrice }.brl()}")
     sb.appendLine()
     sb.append("Feito com Lista Inteligente 📱")
     return sb.toString()
 }
 
-// ── Barra de orçamento/totalizador ──────────────────────────────────────────
-
-@Composable
-fun BudgetSummaryBar(summary: ListSummary) {
-    val accentColor = when {
-        summary.isOverBudget                  -> Red700
-        summary.progressPercent > 0.85f       -> Orange700
-        else                                  -> Green700
-    }
-    val bgColor = when {
-        summary.isOverBudget                  -> Red100
-        summary.progressPercent > 0.85f       -> Orange100
-        else                                  -> Green100
-    }
-
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 3.dp
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(bgColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (summary.isOverBudget) Icons.Default.PriorityHigh else Icons.Default.Payments,
-                    null, tint = accentColor
-                )
-            }
-
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(
-                    "Total da lista",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "R$ ${"%.2f".format(summary.subtotal).replace(".", ",")}",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (summary.budget > 0) {
-                    Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(
-                        progress   = { summary.progressPercent },
-                        modifier   = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
-                        color      = accentColor,
-                        trackColor = accentColor.copy(alpha = 0.15f)
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
-                Text(
-                    "${summary.checkedItems}/${summary.totalItems}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-                Text(
-                    "itens",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (summary.budget > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (summary.isOverBudget)
-                            "Acima do orçamento"
-                        else
-                            "Resta R$ ${"%.2f".format(summary.remaining).replace(".", ",")}",
-                        fontSize   = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = accentColor
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ── Cabeçalho de categoria ───────────────────────────────────────────────────
-
-@Composable
-fun CategoryHeader(category: String) {
-    Surface(color = MaterialTheme.colorScheme.background) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(width = 3.dp, height = 14.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Green700)
-            )
-            Text(
-                category.uppercase(),
-                fontWeight = FontWeight.SemiBold,
-                fontSize   = 12.sp,
-                letterSpacing = 0.5.sp,
-                color      = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier   = Modifier.padding(start = 8.dp)
-            )
-        }
-    }
-}
-
-// ── Linha de item da lista ───────────────────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ShoppingItemRow(
-    item: ShoppingItem,
-    onScanPrice: () -> Unit,
-    onUncheck: () -> Unit,
-    onDelete: () -> Unit,
-    onQtyUp: () -> Unit,
-    onQtyDown: () -> Unit
-) {
-    val textDecoration = if (item.checked) TextDecoration.LineThrough else TextDecoration.None
-    val textColor = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant
-                   else MaterialTheme.colorScheme.onSurface
-
-    // Item ainda não encontrado: tocar no checkbox/linha abre a câmera para ler o preço.
-    // Item já marcado: tocar de novo só desmarca (não precisa escanear outra vez).
-    val onRowTap = { if (item.checked) onUncheck() else onScanPrice() }
-
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
-        }
-    )
-
-    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)) {
-        SwipeToDismissBox(
-            state = dismissState,
-            enableDismissFromStartToEnd = false,
-            backgroundContent = {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 20.dp),
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
-                }
-            }
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onRowTap),
-                shape    = RoundedCornerShape(12.dp),
-                color    = if (item.checked) MaterialTheme.colorScheme.surfaceVariant
-                           else MaterialTheme.colorScheme.surface,
-                shadowElevation = if (item.checked) 0.dp else 1.dp
-            ) {
-                Row(
-                    Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Indicador de status: check verde quando encontrado, aro vazio quando pendente
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (item.checked) Green700 else Color.Transparent)
-                            .border(
-                                width = if (item.checked) 0.dp else 1.5.dp,
-                                color = if (item.checked) Color.Transparent else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable(onClick = onRowTap),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (item.checked) {
-                            Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        }
-                    }
-
-                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                        Text(item.name, fontWeight = FontWeight.Medium,
-                            textDecoration = textDecoration, color = textColor)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "${item.quantity} ${item.unit} · ${item.selectedPriceLabel}",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                " · R$ ${"%.2f".format(item.selectedPrice).replace(".", ",")} cada",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // Controle de quantidade
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SmallQtyButton(Icons.Default.Remove, onClick = onQtyDown)
-                        Text(
-                            "${item.quantity}",
-                            fontWeight = FontWeight.Bold,
-                            modifier   = Modifier.padding(horizontal = 8.dp),
-                            minLines   = 1
-                        )
-                        SmallQtyButton(Icons.Default.Add, onClick = onQtyUp)
-                    }
-
-                    // Total do item
-                    Text(
-                        "R$ ${"%.2f".format(item.totalPrice).replace(".", ",")}",
-                        fontWeight = FontWeight.Bold,
-                        color      = Green700,
-                        modifier   = Modifier.padding(start = 10.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SmallQtyButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, null, modifier = Modifier.size(16.dp))
-    }
-}
-
-// ── Dica quando lista vazia ──────────────────────────────────────────────────
+// ── Lista vazia ──────────────────────────────────────────────────────────────
 
 @Composable
 fun EmptyListHint(listType: String = ListTypes.MERCADO, onScan: () -> Unit, onAdd: () -> Unit) {
     val subtitle = when (listType) {
-        ListTypes.FARMACIA -> "Escaneie a caixa do medicamento ou adicione manualmente"
+        ListTypes.FARMACIA -> "Escaneie a caixa do produto ou adicione manualmente"
         ListTypes.CASA     -> "Escaneie um produto ou adicione o que falta em casa"
         else               -> "Escaneie uma etiqueta ou adicione itens manualmente"
     }
@@ -584,11 +946,9 @@ fun EmptyListHint(listType: String = ListTypes.MERCADO, onScan: () -> Unit, onAd
     ) {
         Text(ListTypes.emoji(listType), fontSize = 56.sp)
         Spacer(Modifier.height(16.dp))
-        Text("Lista vazia", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text("Sua lista está vazia", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         Spacer(Modifier.height(8.dp))
-        Text(subtitle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 14.sp)
+        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         Spacer(Modifier.height(24.dp))
         Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.QrCodeScanner, null)
@@ -604,7 +964,7 @@ fun EmptyListHint(listType: String = ListTypes.MERCADO, onScan: () -> Unit, onAd
     }
 }
 
-// ── Dialog de adição manual ──────────────────────────────────────────────────
+// ── Adição manual ────────────────────────────────────────────────────────────
 
 private val itemUnits = listOf("un", "cx", "pct", "kg", "g", "L", "ml")
 
@@ -635,13 +995,17 @@ fun AddItemDialog(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = qty, onValueChange = { qty = it },
+                        value = qty, onValueChange = { qty = it.filter { ch -> ch.isDigit() } },
                         label = { Text("Qtd") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = price, onValueChange = { price = it },
-                        label = { Text("Preço R$") },
+                        label = { Text("Preço R$ (opcional)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(2f)
                     )
                 }
@@ -663,9 +1027,9 @@ fun AddItemDialog(
         },
         confirmButton = {
             Button(onClick = {
-                val p = price.replace(",", ".").toDoubleOrNull() ?: 0.0
-                val q = qty.toIntOrNull() ?: 1
-                if (name.isNotBlank()) onAdd(name, q, p, "Manual", unit, category)
+                val p = price.parseMoney() ?: 0.0
+                val q = (qty.toIntOrNull() ?: 1).coerceAtLeast(1)
+                if (name.isNotBlank()) onAdd(name.trim(), q, p, "Manual", unit, category)
             }) { Text("Adicionar") }
         },
         dismissButton = {

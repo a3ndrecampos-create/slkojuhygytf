@@ -28,7 +28,9 @@ import com.listainteligente.model.PriceOption
 import com.listainteligente.model.ScannedLabel
 import com.listainteligente.service.CameraService
 import com.listainteligente.service.ScanEvent
+import com.listainteligente.ui.brl
 import com.listainteligente.ui.theme.*
+import kotlin.math.abs
 
 /**
  * Tela de escaneamento de etiqueta.
@@ -66,6 +68,11 @@ fun ScannerScreen(
     // Sem isso, o PreviewView fica na tela mas nunca recebe frames.
     LaunchedEffect(cameraPermission.status.isGranted) {
         if (cameraPermission.status.isGranted) {
+            // Só aceita a etiqueta quando o preço em destaque aparece igual em 2 leituras
+            // seguidas — evita pegar um número errado de um frame borrado ou em movimento.
+            var stableCount = 0
+            var lastPrice: Double? = null
+
             cameraService.startScanning(previewView, lifecycleOwner)
                 .collect { event ->
                     when (event) {
@@ -73,11 +80,26 @@ fun ScannerScreen(
                             // Ignora novas detecções enquanto o card de resultado já está
                             // aberto, pra não trocar a etiqueta escaneada debaixo do usuário.
                             if (scannedLabel == null) {
-                                scannedLabel = event.label
-                                scanHint = null
+                                val price = event.label.highlightedPrice
+                                    ?: event.label.priceOptions.firstOrNull()?.price
+                                if (price != null && price == lastPrice) stableCount++
+                                else { lastPrice = price; stableCount = 1 }
+
+                                if (stableCount >= 2) {
+                                    scannedLabel = event.label
+                                    scanHint = null
+                                    stableCount = 0
+                                    lastPrice = null
+                                } else {
+                                    scanHint = "Lendo o preço… mantenha firme"
+                                }
                             }
                         }
-                        is ScanEvent.NoLabel -> scanHint = null
+                        is ScanEvent.NoLabel -> {
+                            scanHint = null
+                            stableCount = 0
+                            lastPrice = null
+                        }
                         is ScanEvent.Error -> {
                             // Na 1ª execução o modelo de OCR pode ainda estar sendo baixado
                             // pelo Play Services — mostra isso em vez de ficar mudo.
@@ -290,8 +312,10 @@ fun ScannedResultCard(
     onSelect: (PriceOption, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var selectedOption by remember { mutableStateOf(label.priceOptions.minByOrNull { it.price }) }
-    var qty by remember { mutableStateOf(selectedOption?.minQty ?: 1) }
+    // O preço em destaque na etiqueta (maior fonte) vem primeiro e já selecionado.
+    val options = remember(label) { orderedOptions(label) }
+    var selectedOption by remember(label) { mutableStateOf(options.firstOrNull()) }
+    var qty by remember(label) { mutableStateOf(selectedOption?.minQty ?: 1) }
 
     val willRename = currentItemName != null &&
         !currentItemName.equals(label.productName, ignoreCase = true) &&
@@ -301,9 +325,9 @@ fun ScannedResultCard(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 16.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
 
             // Handle + título
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -330,19 +354,28 @@ fun ScannedResultCard(
             Spacer(Modifier.height(16.dp))
 
             // Comparação com o menor preço já visto pra esse produto
-            val currentBestPrice = label.priceOptions.minByOrNull { it.price }?.price
+            val currentBestPrice = selectedOption?.price
             if (historicalLow != null && currentBestPrice != null && historicalLow > 0) {
                 PriceHistoryBadge(currentPrice = currentBestPrice, historicalLow = historicalLow)
                 Spacer(Modifier.height(12.dp))
             }
 
             // Opções de preço
-            Text("Selecione o preço:", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (label.highlightedPrice != null) "Preço em destaque na etiqueta:" else "Selecione o preço:",
+                fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(8.dp))
 
-            label.priceOptions.forEach { option ->
+            options.forEachIndexed { index, option ->
+                if (index == 1) {
+                    Text("Outros preços da etiqueta:", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                }
                 PriceOptionCard(
                     option   = option,
+                    isHighlighted = index == 0 && label.highlightedPrice != null,
                     selected = option == selectedOption,
                     qty      = qty,
                     onClick  = {
@@ -370,7 +403,7 @@ fun ScannedResultCard(
             ) {
                 Text("Total do item", fontWeight = FontWeight.Medium)
                 Text(
-                    "R$ ${"%.2f".format(total).replace(".", ",")}",
+                    total.brl(),
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = Green700
@@ -395,6 +428,13 @@ fun ScannedResultCard(
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+/** Coloca primeiro a opção cujo preço é o que está em maior destaque na etiqueta. */
+private fun orderedOptions(label: ScannedLabel): List<PriceOption> {
+    val h = label.highlightedPrice ?: return label.priceOptions
+    val main = label.priceOptions.firstOrNull { abs(it.price - h) < 0.005 } ?: return label.priceOptions
+    return listOf(main) + label.priceOptions.filter { it !== main }
 }
 
 // ── Selo de comparação com o histórico de preços ─────────────────────────────
@@ -440,6 +480,7 @@ private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third:
 @Composable
 fun PriceOptionCard(
     option: PriceOption,
+    isHighlighted: Boolean = false,
     selected: Boolean,
     qty: Int,
     onClick: () -> Unit
@@ -463,6 +504,10 @@ fun PriceOptionCard(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(option.label, fontWeight = FontWeight.SemiBold)
+                    if (isHighlighted) {
+                        Spacer(Modifier.width(6.dp))
+                        Chip("DESTAQUE", Green700, Green200)
+                    }
                     if (option.requiresApp) {
                         Spacer(Modifier.width(6.dp))
                         Chip("APP", Blue700, Blue100)
@@ -484,7 +529,7 @@ fun PriceOptionCard(
                 }
             }
             Text(
-                "R$ ${"%.2f".format(option.price).replace(".", ",")}",
+                option.price.brl(),
                 fontWeight = FontWeight.Bold,
                 fontSize   = 22.sp,
                 color      = if (selected) Green700 else MaterialTheme.colorScheme.onSurface

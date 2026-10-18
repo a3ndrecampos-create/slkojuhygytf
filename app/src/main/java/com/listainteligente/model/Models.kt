@@ -72,7 +72,9 @@ data class ScannedLabel(
     val productName: String,
     val ean: String = "",
     val priceOptions: List<PriceOption>,
-    val rawText: String = ""
+    val rawText: String = "",
+    /** Preço em maior destaque visual na etiqueta (o número impresso maior). Null se não deu pra determinar. */
+    val highlightedPrice: Double? = null
 )
 
 // ─── Resumo financeiro da lista ──────────────────────────────────────────────
